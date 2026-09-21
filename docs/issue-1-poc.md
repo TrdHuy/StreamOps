@@ -20,6 +20,13 @@ streamops scene review gaming-poc
 streamops scene review gaming-poc --video 15
 ```
 
+Local OBS E2E harness:
+
+```powershell
+$env:OBS_WEBSOCKET_PASSWORD = "<password-if-enabled>"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/local/e2e-gaming-poc.ps1
+```
+
 ## Artifacts
 
 ```text
@@ -34,10 +41,17 @@ artifacts/
 When `--video` is used, OBS writes the video to its configured recording directory and the output path is recorded in `verify.json` and `report.md`.
 StreamOps waits for that file to finalize, copies it into the same timestamped review artifact directory as `sample-<seconds>s.<ext>`, and records both the copied artifact path and original OBS output path.
 
+The local E2E harness writes under:
+
+```text
+artifacts/e2e/
+```
+
 ## Limitations
 
 - Canvas/output/FPS is global OBS video state, not scene-local state. This POC sets OBS to `3840x2160@30` because issue #1 requires it.
 - The configured OBS sources must already exist. Camera transport from device D is intentionally out of scope.
+- Scene layout can be applied while sources are inactive or reporting runtime size `0x0`; camera sizing uses OBS bounds rather than live frame dimensions.
 - Visible unmanaged items inside `gaming-poc` are preserved and reported as warnings instead of being deleted.
 - This host currently needs Python installed before the CLI can run.
 

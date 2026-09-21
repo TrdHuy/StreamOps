@@ -21,9 +21,13 @@ def test_camera_transform_uses_bottom_right_anchor() -> None:
         ),
     )
 
-    transform = desired_transform(config, config.camera, {"sourceWidth": 1920, "sourceHeight": 1080})
+    transform = desired_transform(config, config.camera, {"sourceWidth": 0, "sourceHeight": 0})
 
     assert transform["positionX"] == 3760
     assert transform["positionY"] == 2080
-    assert transform["scaleX"] == transform["scaleY"] == 0.44
+    assert transform["scaleX"] == transform["scaleY"] == 1.0
     assert transform["alignment"] == 10
+    assert transform["boundsAlignment"] == 10
+    assert transform["boundsType"] == "OBS_BOUNDS_SCALE_TO_WIDTH"
+    assert transform["boundsWidth"] == 844.8
+    assert transform["boundsHeight"] == 0.0

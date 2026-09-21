@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .config import SceneConfig, SourceConfig
-from .errors import ConfigError, VerificationError
+from .errors import ConfigError
 
 
 OBS_ALIGN_TOP_LEFT = 5
@@ -48,24 +48,22 @@ def _camera_transform(
     if source.width_percent is None or source.width_percent <= 0:
         raise ConfigError(f"Camera source {source.source_name!r} requires a positive width_percent.")
 
-    source_width = _positive_number(current_transform, "sourceWidth", source.source_name)
     target_width = config.video.base_width * (source.width_percent / 100.0)
-    scale = target_width / source_width
 
     return {
         "alignment": OBS_ALIGN_BOTTOM_RIGHT,
         "positionX": float(config.video.base_width - source.margin_right),
         "positionY": float(config.video.base_height - source.margin_bottom),
-        "scaleX": scale,
-        "scaleY": scale,
+        "scaleX": 1.0,
+        "scaleY": 1.0,
         "rotation": 0.0,
         "cropLeft": 0,
         "cropRight": 0,
         "cropTop": 0,
         "cropBottom": 0,
-        "boundsType": "OBS_BOUNDS_NONE",
-        "boundsAlignment": OBS_ALIGN_TOP_LEFT,
-        "boundsWidth": 0.0,
+        "boundsType": "OBS_BOUNDS_SCALE_TO_WIDTH",
+        "boundsAlignment": OBS_ALIGN_BOTTOM_RIGHT,
+        "boundsWidth": target_width,
         "boundsHeight": 0.0,
     }
 
@@ -89,12 +87,3 @@ def transform_differences(
         elif actual_value != expected_value:
             differences[key] = {"expected": expected_value, "actual": actual_value}
     return differences
-
-
-def _positive_number(raw: dict[str, Any], key: str, source_name: str) -> float:
-    value = raw.get(key)
-    if not isinstance(value, int | float) or value <= 0:
-        raise VerificationError(
-            f"OBS did not report a usable {key} for {source_name!r}; make sure the source is active."
-        )
-    return float(value)

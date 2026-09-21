@@ -81,3 +81,22 @@ def test_apply_preflights_sources_before_video_mutation() -> None:
         apply_scene("gaming-poc", client=obs, root=ROOT)
 
     assert obs.video_settings == original_video_settings
+
+
+def test_apply_handles_existing_source_with_zero_runtime_size() -> None:
+    obs = FakeObsClient()
+
+    first = apply_scene("gaming-poc", client=obs, root=ROOT)
+    camera_id = next(
+        int(item["sceneItemId"])
+        for item in obs.scenes["gaming-poc"]
+        if item["sourceName"] == "OpenStream V8"
+    )
+    obs.transforms[camera_id]["sourceWidth"] = 0
+    obs.transforms[camera_id]["sourceHeight"] = 0
+    second = apply_scene("gaming-poc", client=obs, root=ROOT)
+
+    assert first.changed is True
+    assert second.changed is False
+    assert obs.transforms[camera_id]["boundsType"] == "OBS_BOUNDS_SCALE_TO_WIDTH"
+    assert obs.transforms[camera_id]["boundsWidth"] == 844.8
