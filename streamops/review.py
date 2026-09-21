@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from pathlib import Path
+import shutil
 import time
 from typing import Any, Protocol
 
@@ -61,7 +62,7 @@ def review_scene(
 
             if video_seconds is not None and result.finalize().status == "PASS":
                 try:
-                    result.artifacts["video"] = _record_sample(obs, scene_name, video_seconds)
+                    result.artifacts.update(_record_sample(obs, scene_name, video_seconds, artifact_dir))
                 except StreamOpsError as exc:
                     result.add(Check("artifact.video", "FAIL", str(exc), expected=f"{video_seconds}s sample", actual=None))
 
@@ -82,7 +83,7 @@ def _artifact_dir(project_root: Path, scene_name: str, artifact_root: Path | Non
     return root / scene_name / timestamp
 
 
-def _record_sample(obs: ReviewClient, scene_name: str, seconds: int) -> str:
+def _record_sample(obs: ReviewClient, scene_name: str, seconds: int, artifact_dir: Path) -> dict[str, str]:
     if seconds <= 0 or seconds > 300:
         raise StreamOpsError("--video must be between 1 and 300 seconds.")
 
@@ -105,7 +106,16 @@ def _record_sample(obs: ReviewClient, scene_name: str, seconds: int) -> str:
         output_path = stop_response.get("outputPath")
         if not output_path:
             raise StreamOpsError("OBS stopped recording but did not return an outputPath.")
-        return str(output_path)
+        source_path = Path(output_path).expanduser()
+        _wait_for_stable_file(source_path)
+
+        target_path = artifact_dir / _sample_video_name(seconds, source_path)
+        try:
+            shutil.copy2(source_path, target_path)
+        except OSError as exc:
+            raise StreamOpsError(f"Could not copy video sample into review artifacts: {exc}") from exc
+        _wait_for_stable_file(target_path, timeout_seconds=5, poll_seconds=0.2)
+        return {"video": str(target_path), "video_source": str(source_path)}
     finally:
         stop_error: StreamOpsError | None = None
         if started_recording:
@@ -117,6 +127,43 @@ def _record_sample(obs: ReviewClient, scene_name: str, seconds: int) -> str:
             obs.set_current_program_scene(previous_scene)
         if stop_error:
             raise stop_error
+
+
+def _wait_for_stable_file(path: Path, *, timeout_seconds: float = 30, poll_seconds: float = 0.5) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_size: int | None = None
+    stable_observations = 0
+    last_error: OSError | None = None
+
+    while time.monotonic() < deadline:
+        try:
+            size = path.stat().st_size
+            last_error = None
+        except OSError as exc:
+            size = 0
+            last_error = exc
+
+        if size > 0 and size == last_size:
+            stable_observations += 1
+        elif size > 0:
+            stable_observations = 1
+        else:
+            stable_observations = 0
+
+        if stable_observations >= 2:
+            return
+
+        last_size = size
+        time.sleep(poll_seconds)
+
+    if last_error:
+        raise StreamOpsError(f"Video sample was not readable after recording: {path} ({last_error})")
+    raise StreamOpsError(f"Video sample was not finalized or remained empty after recording: {path}")
+
+
+def _sample_video_name(seconds: int, source_path: Path) -> str:
+    suffix = source_path.suffix or ".mp4"
+    return f"sample-{seconds}s{suffix}"
 
 
 def _render_report(result: VerifyResult) -> str:

@@ -104,8 +104,8 @@ def apply_scene(
     changes: list[Change] = []
     try:
         obs.get_version()
-        _ensure_video_settings(obs, config, changes)
         _ensure_configured_sources_exist(obs, config)
+        _ensure_video_settings(obs, config, changes)
         _ensure_scene_exists(obs, config, changes)
         _remove_duplicate_configured_items(obs, config, changes)
         item_ids = _ensure_configured_scene_items(obs, config, changes)

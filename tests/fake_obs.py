@@ -27,6 +27,7 @@ class FakeObsClient:
         self.recording = False
         self.streaming = False
         self.saved_screenshots: list[Path] = []
+        self.recording_output_path: Path | None = None
 
     def close(self) -> None:
         pass
@@ -128,7 +129,10 @@ class FakeObsClient:
 
     def stop_record(self) -> dict[str, Any]:
         self.recording = False
-        return {"outputPath": "C:/Users/huy/Videos/fake.mp4"}
+        output_path = self.recording_output_path or Path("C:/Users/huy/Videos/fake.mp4")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"fake video")
+        return {"outputPath": str(output_path)}
 
     def _renumber(self, scene_name: str) -> None:
         for index, item in enumerate(self.scenes[scene_name]):

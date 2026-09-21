@@ -70,3 +70,14 @@ def test_apply_refuses_video_setting_change_while_recording() -> None:
 
     with pytest.raises(StreamOpsError, match="streaming or recording is active"):
         apply_scene("gaming-poc", client=obs, root=ROOT)
+
+
+def test_apply_preflights_sources_before_video_mutation() -> None:
+    obs = FakeObsClient()
+    obs.inputs = [item for item in obs.inputs if item["inputName"] != "OpenStream V8"]
+    original_video_settings = dict(obs.video_settings)
+
+    with pytest.raises(StreamOpsError, match="OpenStream V8"):
+        apply_scene("gaming-poc", client=obs, root=ROOT)
+
+    assert obs.video_settings == original_video_settings

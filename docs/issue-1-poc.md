@@ -32,6 +32,7 @@ artifacts/
 ```
 
 When `--video` is used, OBS writes the video to its configured recording directory and the output path is recorded in `verify.json` and `report.md`.
+StreamOps waits for that file to finalize, copies it into the same timestamped review artifact directory as `sample-<seconds>s.<ext>`, and records both the copied artifact path and original OBS output path.
 
 ## Limitations
 
