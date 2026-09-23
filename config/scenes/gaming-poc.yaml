@@ -13,7 +13,11 @@ sources:
     fit: stretch
     managed: true
     input_kind: monitor_capture
-    settings: {}
+    settings:
+      monitor_id: auto
+      method: 2
+      capture_cursor: true
+      force_sdr: false
   overlay:
     source_name: StreamOps Clock POC
     role: overlay

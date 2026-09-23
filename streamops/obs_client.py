@@ -212,6 +212,21 @@ class ObsClient:
     def get_input_settings(self, input_name: str) -> dict[str, Any]:
         return dict(self.request("GetInputSettings", {"inputName": input_name}).get("inputSettings", {}))
 
+    def get_input_properties_list_property_items(
+        self,
+        input_name: str,
+        property_name: str,
+    ) -> list[dict[str, Any]]:
+        return list(
+            self.request(
+                "GetInputPropertiesListPropertyItems",
+                {"inputName": input_name, "propertyName": property_name},
+            ).get("propertyItems", [])
+        )
+
+    def get_monitor_list(self) -> list[dict[str, Any]]:
+        return list(self.request("GetMonitorList").get("monitors", []))
+
     def set_input_settings(self, input_name: str, settings: dict[str, Any], *, overlay: bool = True) -> None:
         self.request(
             "SetInputSettings",

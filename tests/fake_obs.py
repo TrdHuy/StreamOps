@@ -21,6 +21,24 @@ class FakeObsClient:
         self.input_kinds = ["monitor_capture", "browser_source"]
         self.inputs: list[dict[str, Any]] = []
         self.input_settings: dict[str, dict[str, Any]] = {}
+        self.monitor_property_items = [
+            {"itemEnabled": False, "itemName": "[Select a display to capture]", "itemValue": "DUMMY"},
+            {
+                "itemEnabled": True,
+                "itemName": ": 1024x768 @ 0,0 (Primary Monitor)",
+                "itemValue": r"\\.\DISPLAY1",
+            },
+        ]
+        self.monitors = [
+            {
+                "monitorHeight": 768,
+                "monitorIndex": 0,
+                "monitorName": r"\\.\DISPLAY1(0)",
+                "monitorPositionX": 0,
+                "monitorPositionY": 0,
+                "monitorWidth": 1024,
+            }
+        ]
         self.scenes: dict[str, list[dict[str, Any]]] = {}
         self.transforms: dict[int, dict[str, Any]] = {}
         self.next_item_id = 1
@@ -75,6 +93,14 @@ class FakeObsClient:
 
     def get_input_settings(self, input_name: str) -> dict[str, Any]:
         return deepcopy(self.input_settings.get(input_name, {}))
+
+    def get_input_properties_list_property_items(self, input_name: str, property_name: str) -> list[dict[str, Any]]:
+        if property_name == "monitor_id":
+            return deepcopy(self.monitor_property_items)
+        return []
+
+    def get_monitor_list(self) -> list[dict[str, Any]]:
+        return deepcopy(self.monitors)
 
     def set_input_settings(self, input_name: str, settings: dict[str, Any], *, overlay: bool = True) -> None:
         if overlay:

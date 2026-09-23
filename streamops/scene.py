@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import os
 from pathlib import Path
+import re
 from typing import Any, Protocol
 
 from .config import SceneConfig, SourceConfig, find_project_root, load_scene_config
@@ -34,6 +36,8 @@ class SceneClient(Protocol):
         enabled: bool = True,
     ) -> int: ...
     def get_input_settings(self, input_name: str) -> dict[str, Any]: ...
+    def get_input_properties_list_property_items(self, input_name: str, property_name: str) -> list[dict[str, Any]]: ...
+    def get_monitor_list(self) -> list[dict[str, Any]]: ...
     def set_input_settings(self, input_name: str, settings: dict[str, Any], *, overlay: bool = True) -> None: ...
     def get_scene_item_list(self, scene_name: str) -> list[dict[str, Any]]: ...
     def create_scene_item(self, scene_name: str, source_name: str, *, enabled: bool = True) -> int: ...
@@ -123,6 +127,7 @@ def apply_scene(
         _ensure_managed_inputs(obs, config, project_root, changes)
         _remove_duplicate_configured_items(obs, config, changes)
         item_ids = _ensure_configured_scene_items(obs, config, changes)
+        _disable_unmanaged_items(obs, config, changes)
         _apply_transforms(obs, config, item_ids, changes)
         _apply_visibility(obs, config, item_ids, changes)
         _apply_order(obs, config, item_ids, changes)
@@ -226,7 +231,7 @@ def _preflight_configured_sources(obs: SceneClient, config: SceneConfig, root: P
         )
 
     for source in managed_sources:
-        _resolve_input_settings(source, root)
+        _resolve_input_settings(obs, source, root, inputs)
         if source.source_name in scenes:
             raise StreamOpsError(
                 f"Managed source {source.source_name!r} conflicts with an existing OBS scene name."
@@ -258,7 +263,7 @@ def _ensure_managed_inputs(
         if not source.managed:
             continue
 
-        desired_settings = _resolve_input_settings(source, root)
+        desired_settings = _resolve_input_settings(obs, source, root, inputs)
         if source.source_name not in inputs:
             if source.input_kind is None:
                 raise ConfigError(f"Managed source {source.source_name!r} requires an input_kind.")
@@ -319,6 +324,16 @@ def _ensure_configured_scene_items(
             scene_item_id = int(item["sceneItemId"])
         item_ids[source.role] = scene_item_id
     return item_ids
+
+
+def _disable_unmanaged_items(obs: SceneClient, config: SceneConfig, changes: list[Change]) -> None:
+    configured_names = {source.source_name for source in config.sources}
+    for item in obs.get_scene_item_list(config.name):
+        if item.get("sourceName") in configured_names or not bool(item.get("sceneItemEnabled", True)):
+            continue
+        scene_item_id = int(item["sceneItemId"])
+        obs.set_scene_item_enabled(config.name, scene_item_id, False)
+        changes.append(Change("item.disable_unmanaged", f"Disabled unmanaged item {item.get('sourceName')!r}."))
 
 
 def _apply_transforms(
@@ -427,7 +442,7 @@ def _verify_sources(obs: SceneClient, config: SceneConfig, result: VerifyResult,
             )
         )
 
-        expected_settings = _resolve_input_settings(source, root)
+        expected_settings = _resolve_input_settings(obs, source, root, input_items)
         current_settings = obs.get_input_settings(source.source_name)
         settings_differences = _settings_differences(current_settings, expected_settings)
         result.add(
@@ -535,22 +550,175 @@ def _find_scene_item(items: list[dict[str, Any]], source_name: str) -> dict[str,
     return None
 
 
-def _resolve_input_settings(source: SourceConfig, root: Path) -> dict[str, Any]:
+def _resolve_input_settings(
+    obs: SceneClient,
+    source: SourceConfig,
+    root: Path,
+    inputs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     settings = dict(source.settings)
     local_file = settings.get("local_file")
-    if local_file is None:
-        return settings
-    if not isinstance(local_file, str) or not local_file.strip():
-        raise ConfigError(f"Managed source {source.source_name!r} has invalid 'local_file' setting.")
+    if local_file is not None:
+        if not isinstance(local_file, str) or not local_file.strip():
+            raise ConfigError(f"Managed source {source.source_name!r} has invalid 'local_file' setting.")
 
-    path = Path(local_file).expanduser()
-    if not path.is_absolute():
-        path = root / path
-    path = path.resolve()
-    if not path.exists():
-        raise ConfigError(f"Managed source {source.source_name!r} local_file does not exist: {path}")
-    settings["local_file"] = str(path)
+        path = Path(local_file).expanduser()
+        if not path.is_absolute():
+            path = root / path
+        path = path.resolve()
+        if not path.exists():
+            raise ConfigError(f"Managed source {source.source_name!r} local_file does not exist: {path}")
+        settings["local_file"] = str(path)
+
+    if source.input_kind == "monitor_capture":
+        settings = _resolve_monitor_capture_settings(obs, source, settings, inputs)
+
     return settings
+
+
+def _resolve_monitor_capture_settings(
+    obs: SceneClient,
+    source: SourceConfig,
+    settings: dict[str, Any],
+    inputs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    monitor_id = settings.get("monitor_id")
+    if monitor_id == "auto":
+        settings["monitor_id"] = _select_monitor_id(obs, source, inputs)
+    elif not _valid_monitor_id(monitor_id):
+        raise ConfigError(
+            f"Managed monitor_capture source {source.source_name!r} requires a valid monitor_id or 'auto'."
+        )
+    return settings
+
+
+def _select_monitor_id(obs: SceneClient, source: SourceConfig, inputs: dict[str, dict[str, Any]]) -> str:
+    if source.source_name in inputs:
+        try:
+            monitor_id = _select_monitor_id_from_property_items(
+                obs.get_input_properties_list_property_items(source.source_name, "monitor_id")
+            )
+            if monitor_id:
+                return monitor_id
+        except StreamOpsError:
+            pass
+
+    try:
+        monitor_id = _select_monitor_id_from_monitor_list(obs.get_monitor_list())
+        if monitor_id:
+            return monitor_id
+    except StreamOpsError:
+        pass
+
+    for monitor_id in _windows_monitor_ids():
+        if _valid_monitor_id(monitor_id):
+            return monitor_id
+
+    raise StreamOpsError(
+        f"Could not resolve a valid desktop display for {source.source_name!r}. "
+        "OBS reported no enabled monitor_capture display."
+    )
+
+
+def _select_monitor_id_from_property_items(items: list[dict[str, Any]]) -> str | None:
+    candidates = [
+        item
+        for item in items
+        if item.get("itemEnabled", True) is True and _valid_monitor_id(item.get("itemValue"))
+    ]
+    if not candidates:
+        return None
+    primary = [
+        item
+        for item in candidates
+        if "primary" in str(item.get("itemName", "")).casefold()
+    ]
+    selected = primary[0] if primary else candidates[0]
+    return str(selected["itemValue"])
+
+
+def _select_monitor_id_from_monitor_list(monitors: list[dict[str, Any]]) -> str | None:
+    ordered = sorted(monitors, key=lambda item: int(item.get("monitorIndex", 9999)))
+    for monitor in ordered:
+        name = monitor.get("monitorName")
+        if not isinstance(name, str):
+            continue
+        monitor_id = re.sub(r"\(\d+\)$", "", name)
+        if _valid_monitor_id(monitor_id):
+            return monitor_id
+    return None
+
+
+def _valid_monitor_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and value != "DUMMY"
+
+
+def _windows_monitor_ids() -> list[str]:
+    if os.name != "nt":
+        return []
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return []
+
+    user32 = ctypes.windll.user32
+    cch_device_name = 32
+    edd_get_device_interface_name = 0x00000001
+
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", ctypes.c_long),
+            ("top", ctypes.c_long),
+            ("right", ctypes.c_long),
+            ("bottom", ctypes.c_long),
+        ]
+
+    class MONITORINFOEXA(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("rcMonitor", RECT),
+            ("rcWork", RECT),
+            ("dwFlags", wintypes.DWORD),
+            ("szDevice", ctypes.c_char * cch_device_name),
+        ]
+
+    class DISPLAY_DEVICEA(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("DeviceName", ctypes.c_char * 32),
+            ("DeviceString", ctypes.c_char * 128),
+            ("StateFlags", wintypes.DWORD),
+            ("DeviceID", ctypes.c_char * 128),
+            ("DeviceKey", ctypes.c_char * 128),
+        ]
+
+    monitor_enum_proc = ctypes.WINFUNCTYPE(
+        wintypes.BOOL,
+        wintypes.HMONITOR,
+        wintypes.HDC,
+        ctypes.POINTER(RECT),
+        wintypes.LPARAM,
+    )
+    monitor_ids: list[str] = []
+
+    def decode(raw: bytes) -> str:
+        return raw.split(b"\x00", 1)[0].decode("mbcs", errors="replace")
+
+    def callback(handle: Any, hdc: Any, rect: Any, param: Any) -> bool:
+        info = MONITORINFOEXA()
+        info.cbSize = ctypes.sizeof(info)
+        if user32.GetMonitorInfoA(handle, ctypes.byref(info)):
+            device = DISPLAY_DEVICEA()
+            device.cb = ctypes.sizeof(device)
+            if user32.EnumDisplayDevicesA(info.szDevice, 0, ctypes.byref(device), edd_get_device_interface_name):
+                monitor_ids.append(decode(device.DeviceID))
+            monitor_ids.append(decode(info.szDevice))
+        return True
+
+    user32.EnumDisplayMonitors(0, 0, monitor_enum_proc(callback), 0)
+    return monitor_ids
 
 
 def _settings_match(actual: dict[str, Any], expected: dict[str, Any]) -> bool:

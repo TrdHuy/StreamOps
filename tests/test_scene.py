@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from streamops.errors import StreamOpsError
+import streamops.scene as scene_module
 from streamops.scene import apply_scene, verify_scene
 
 from .fake_obs import FakeObsClient
@@ -23,6 +24,8 @@ def test_apply_creates_scene_and_is_idempotent() -> None:
     assert second.changed is False
     assert [item["sourceName"] for item in obs.scenes["gaming-poc"]] == [DESKTOP_SOURCE, CLOCK_SOURCE]
     assert [item["inputName"] for item in obs.inputs] == [DESKTOP_SOURCE, CLOCK_SOURCE]
+    assert obs.input_settings[DESKTOP_SOURCE]["monitor_id"] == r"\\.\DISPLAY1"
+    assert obs.input_settings[DESKTOP_SOURCE]["method"] == 2
     assert obs.video_settings["baseWidth"] == 3840
     assert obs.video_settings["fpsNumerator"] == 30
 
@@ -56,6 +59,8 @@ def test_apply_removes_duplicate_configured_items_only() -> None:
     names = [item["sourceName"] for item in obs.scenes["gaming-poc"]]
     assert names.count(DESKTOP_SOURCE) == 1
     assert "Unmanaged" in names
+    unmanaged = next(item for item in obs.scenes["gaming-poc"] if item["sourceName"] == "Unmanaged")
+    assert unmanaged["sceneItemEnabled"] is False
 
 
 def test_verify_passes_after_apply() -> None:
@@ -78,6 +83,17 @@ def test_verify_fails_when_managed_input_settings_drift() -> None:
     assert any(check.id == "source.overlay.settings" and check.status == "FAIL" for check in result.checks)
 
 
+def test_verify_fails_when_desktop_capture_uses_dummy_monitor() -> None:
+    obs = FakeObsClient()
+    apply_scene("gaming-poc", client=obs, root=ROOT)
+    obs.input_settings[DESKTOP_SOURCE]["monitor_id"] = "DUMMY"
+
+    result = verify_scene("gaming-poc", client=obs, root=ROOT)
+
+    assert result.status == "FAIL"
+    assert any(check.id == "source.main.settings" and check.status == "FAIL" for check in result.checks)
+
+
 def test_apply_refuses_video_setting_change_while_recording() -> None:
     obs = FakeObsClient()
     obs.recording = True
@@ -92,6 +108,21 @@ def test_apply_preflights_managed_input_kind_before_video_mutation() -> None:
     original_video_settings = dict(obs.video_settings)
 
     with pytest.raises(StreamOpsError, match="browser_source"):
+        apply_scene("gaming-poc", client=obs, root=ROOT)
+
+    assert obs.video_settings == original_video_settings
+
+
+def test_apply_preflights_monitor_capture_display_before_video_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
+    obs = FakeObsClient()
+    obs.monitor_property_items = [
+        {"itemEnabled": False, "itemName": "[Select a display to capture]", "itemValue": "DUMMY"}
+    ]
+    obs.monitors = []
+    monkeypatch.setattr(scene_module, "_windows_monitor_ids", lambda: [])
+    original_video_settings = dict(obs.video_settings)
+
+    with pytest.raises(StreamOpsError, match="valid desktop display"):
         apply_scene("gaming-poc", client=obs, root=ROOT)
 
     assert obs.video_settings == original_video_settings

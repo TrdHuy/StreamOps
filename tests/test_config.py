@@ -23,7 +23,12 @@ def test_parse_gaming_poc_config() -> None:
                     "fit": "stretch",
                     "managed": True,
                     "input_kind": "monitor_capture",
-                    "settings": {},
+                    "settings": {
+                        "monitor_id": "auto",
+                        "method": 2,
+                        "capture_cursor": True,
+                        "force_sdr": False,
+                    },
                 },
                 "overlay": {
                     "source_name": "StreamOps Clock POC",
@@ -50,6 +55,7 @@ def test_parse_gaming_poc_config() -> None:
     assert config.name == "gaming-poc"
     assert config.video.base_width == 3840
     assert config.main.source_name == "StreamOps Desktop POC"
+    assert config.main.settings["monitor_id"] == "auto"
     assert config.overlay.source_name == "StreamOps Clock POC"
     assert config.overlay.managed is True
     assert config.overlay.input_kind == "browser_source"

@@ -83,6 +83,8 @@ function Assert-ReviewArtifacts([string]$ReviewDir, [bool]$RequireVideo) {
         Fail "review verify status is $($verify.status), expected PASS: $verifyPath"
     }
 
+    Assert-PreviewHasDesktopContent $previewPath
+
     if ($RequireVideo) {
         $videoPath = [string]$verify.artifacts.video
         if (-not $videoPath) {
@@ -115,6 +117,44 @@ function Assert-ReviewArtifacts([string]$ReviewDir, [bool]$RequireVideo) {
         if ($durationValue -le 0) {
             Fail "video artifact duration is not positive: $videoPath"
         }
+    }
+}
+
+function Assert-PreviewHasDesktopContent([string]$PreviewPath) {
+    Add-Type -AssemblyName System.Drawing
+    $resolvedPath = (Resolve-Path -LiteralPath $PreviewPath).Path
+    $bitmap = [Drawing.Bitmap]::FromFile($resolvedPath)
+    try {
+        $maxX = [Math]::Max(1, [int]($bitmap.Width * 0.65))
+        $maxY = [Math]::Max(1, [int]($bitmap.Height * 0.70))
+        $stepX = [Math]::Max(1, [int]($maxX / 80))
+        $stepY = [Math]::Max(1, [int]($maxY / 45))
+        $samples = 0
+        $brightSamples = 0
+        $brightnessTotal = 0.0
+
+        for ($y = 0; $y -lt $maxY; $y += $stepY) {
+            for ($x = 0; $x -lt $maxX; $x += $stepX) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                $brightness = ($pixel.R + $pixel.G + $pixel.B) / 3.0
+                $brightnessTotal += $brightness
+                $samples += 1
+                if ($brightness -gt 8) {
+                    $brightSamples += 1
+                }
+            }
+        }
+
+        if ($samples -le 0) {
+            Fail "could not sample preview image: $PreviewPath"
+        }
+        $meanBrightness = $brightnessTotal / $samples
+        $brightRatio = $brightSamples / $samples
+        if ($meanBrightness -lt 4 -and $brightRatio -lt 0.01) {
+            Fail "preview main desktop region appears black; desktop capture is not visible: $PreviewPath"
+        }
+    } finally {
+        $bitmap.Dispose()
     }
 }
 

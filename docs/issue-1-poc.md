@@ -54,8 +54,9 @@ artifacts/e2e/
 
 - Canvas/output/FPS is global OBS video state, not scene-local state. This POC sets OBS to `3840x2160@30` because issue #1 requires it.
 - OBS must provide the standard Windows `monitor_capture` input kind and the `browser_source` plugin.
+- StreamOps auto-selects a non-`DUMMY` OBS display for desktop capture and uses DXGI capture for this POC.
 - Scene layout can be applied while sources are inactive or reporting runtime size `0x0`; overlay sizing uses OBS bounds rather than live frame dimensions.
-- Visible unmanaged items inside `gaming-poc` are preserved and reported as warnings instead of being deleted.
+- Unmanaged items inside `gaming-poc` are disabled, not deleted, so stale sources cannot cover the desktop POC.
 - This host currently needs Python installed before the CLI can run.
 
 ## Backlog
