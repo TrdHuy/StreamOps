@@ -38,7 +38,7 @@ def test_parse_gaming_poc_config() -> None:
                     "settings": {
                         "is_local_file": True,
                         "local_file": "obs/assets/clock-overlay.html",
-                        "width": 844,
+                        "width": 845,
                         "height": 475,
                     },
                 },

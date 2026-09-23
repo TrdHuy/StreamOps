@@ -36,17 +36,23 @@ class ObsClient:
 
     @classmethod
     def from_env(cls) -> "ObsClient":
-        port_raw = os.environ.get("OBS_WEBSOCKET_PORT", "4455")
+        local_config = _load_local_obs_websocket_config()
+        port_raw = os.environ.get("OBS_WEBSOCKET_PORT") or _config_value(local_config, "server_port") or "4455"
         timeout_raw = os.environ.get("OBS_WEBSOCKET_TIMEOUT", "5")
         try:
             port = int(port_raw)
             timeout = float(timeout_raw)
         except ValueError as exc:
             raise ObsConnectionError("OBS_WEBSOCKET_PORT must be an integer and timeout must be numeric.") from exc
+
+        password = os.environ.get("OBS_WEBSOCKET_PASSWORD") or None
+        if password is None and _config_auth_required(local_config):
+            password = _config_value(local_config, "server_password") or None
+
         return cls(
             host=os.environ.get("OBS_WEBSOCKET_HOST", "127.0.0.1"),
             port=port,
-            password=os.environ.get("OBS_WEBSOCKET_PASSWORD") or None,
+            password=password,
             timeout=timeout,
         )
 
@@ -287,3 +293,27 @@ class ObsClient:
 def _make_auth(password: str, *, salt: str, challenge: str) -> str:
     secret = base64.b64encode(hashlib.sha256((password + salt).encode("utf-8")).digest()).decode("utf-8")
     return base64.b64encode(hashlib.sha256((secret + challenge).encode("utf-8")).digest()).decode("utf-8")
+
+
+def _load_local_obs_websocket_config() -> dict[str, Any]:
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return {}
+
+    path = Path(appdata) / "obs-studio" / "plugin_config" / "obs-websocket" / "config.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _config_value(config: dict[str, Any], key: str) -> str | None:
+    value = config.get(key)
+    if value is None:
+        return None
+    return str(value)
+
+
+def _config_auth_required(config: dict[str, Any]) -> bool:
+    return config.get("auth_required") is True

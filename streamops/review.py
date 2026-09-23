@@ -80,7 +80,7 @@ def review_scene(
 def _artifact_dir(project_root: Path, scene_name: str, artifact_root: Path | None) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     root = artifact_root or (project_root / "artifacts")
-    return root / scene_name / timestamp
+    return (root / scene_name / timestamp).resolve()
 
 
 def _record_sample(obs: ReviewClient, scene_name: str, seconds: int, artifact_dir: Path) -> dict[str, str]:

@@ -13,6 +13,7 @@
 python -m pip install -e ".[dev]"
 $env:OBS_WEBSOCKET_HOST = "127.0.0.1"
 $env:OBS_WEBSOCKET_PORT = "4455"
+# Optional override. If omitted, StreamOps reads the local OBS WebSocket config.
 $env:OBS_WEBSOCKET_PASSWORD = "<password-if-enabled>"
 
 streamops scene apply gaming-poc
@@ -24,7 +25,7 @@ streamops scene review gaming-poc --video 5
 Local OBS E2E harness:
 
 ```powershell
-$env:OBS_WEBSOCKET_PASSWORD = "<password-if-enabled>"
+# Optional when OBS WebSocket password is present in the local OBS config.
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/local/e2e-gaming-poc.ps1
 ```
 

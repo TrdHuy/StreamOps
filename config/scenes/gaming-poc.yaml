@@ -27,5 +27,5 @@ sources:
     settings:
       is_local_file: true
       local_file: obs/assets/clock-overlay.html
-      width: 844
+      width: 845
       height: 475

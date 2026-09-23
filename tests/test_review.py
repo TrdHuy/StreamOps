@@ -21,6 +21,19 @@ def test_review_writes_pass_artifacts(tmp_path: Path) -> None:
     assert Path(result.artifacts["report"]).exists()
 
 
+def test_review_resolves_relative_artifact_root(tmp_path: Path, monkeypatch) -> None:
+    obs = FakeObsClient()
+    apply_scene("gaming-poc", client=obs, root=ROOT)
+    monkeypatch.chdir(tmp_path)
+
+    result = review_scene("gaming-poc", client=obs, root=ROOT, artifact_root=Path("artifacts/e2e"))
+
+    preview_path = Path(result.artifacts["preview"])
+    assert result.status == "PASS"
+    assert preview_path.is_absolute()
+    assert preview_path.exists()
+
+
 def test_review_video_refusal_is_reported(tmp_path: Path) -> None:
     obs = FakeObsClient()
     apply_scene("gaming-poc", client=obs, root=ROOT)

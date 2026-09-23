@@ -29,5 +29,5 @@ def test_overlay_transform_uses_bottom_right_anchor() -> None:
     assert transform["alignment"] == 10
     assert transform["boundsAlignment"] == 10
     assert transform["boundsType"] == "OBS_BOUNDS_SCALE_TO_WIDTH"
-    assert transform["boundsWidth"] == 844.8
+    assert transform["boundsWidth"] == 845.0
     assert transform["boundsHeight"] == 1.0

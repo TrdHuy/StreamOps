@@ -113,7 +113,7 @@ def test_apply_handles_existing_source_with_zero_runtime_size() -> None:
     assert first.changed is True
     assert second.changed is False
     assert obs.transforms[overlay_id]["boundsType"] == "OBS_BOUNDS_SCALE_TO_WIDTH"
-    assert obs.transforms[overlay_id]["boundsWidth"] == 844.8
+    assert obs.transforms[overlay_id]["boundsWidth"] == 845.0
     assert obs.transforms[overlay_id]["boundsHeight"] == 1.0
 
 
@@ -125,7 +125,7 @@ def test_apply_reconciles_managed_input_settings() -> None:
     result = apply_scene("gaming-poc", client=obs, root=ROOT)
 
     assert result.changed is True
-    assert obs.input_settings[CLOCK_SOURCE]["width"] == 844
+    assert obs.input_settings[CLOCK_SOURCE]["width"] == 845
 
 
 def test_apply_refuses_existing_managed_source_with_wrong_kind_before_video_mutation() -> None:

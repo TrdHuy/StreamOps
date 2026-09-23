@@ -48,7 +48,7 @@ def _overlay_transform(
     if source.width_percent is None or source.width_percent <= 0:
         raise ConfigError(f"Overlay source {source.source_name!r} requires a positive width_percent.")
 
-    target_width = config.video.base_width * (source.width_percent / 100.0)
+    target_width = round(config.video.base_width * (source.width_percent / 100.0))
 
     return {
         "alignment": OBS_ALIGN_BOTTOM_RIGHT,
@@ -63,7 +63,7 @@ def _overlay_transform(
         "cropBottom": 0,
         "boundsType": "OBS_BOUNDS_SCALE_TO_WIDTH",
         "boundsAlignment": OBS_ALIGN_BOTTOM_RIGHT,
-        "boundsWidth": target_width,
+        "boundsWidth": float(target_width),
         "boundsHeight": 1.0,
     }
 

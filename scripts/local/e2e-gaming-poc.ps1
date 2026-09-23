@@ -30,6 +30,29 @@ function Read-JsonFile([string]$Path) {
     return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
 }
 
+function Get-ObsWebSocketConfig() {
+    $path = Join-Path $env:APPDATA "obs-studio\plugin_config\obs-websocket\config.json"
+    if (-not (Test-Path -LiteralPath $path)) {
+        return $null
+    }
+    try {
+        return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    } catch {
+        Fail "OBS WebSocket config is not readable JSON: $path"
+    }
+}
+
+function Get-ObsWebSocketPort($Config) {
+    $envPort = [Environment]::GetEnvironmentVariable("OBS_WEBSOCKET_PORT")
+    if ($envPort) {
+        return [int]$envPort
+    }
+    if ($Config -and $Config.server_port) {
+        return [int]$Config.server_port
+    }
+    return 4455
+}
+
 function Get-LatestReviewDir([string]$Root, [string]$Scene) {
     $sceneRoot = Join-Path $Root $Scene
     if (-not (Test-Path -LiteralPath $sceneRoot)) {
@@ -95,13 +118,25 @@ function Assert-ReviewArtifacts([string]$ReviewDir, [bool]$RequireVideo) {
     }
 }
 
-if (-not [Environment]::GetEnvironmentVariable("OBS_WEBSOCKET_PASSWORD")) {
-    Fail "OBS_WEBSOCKET_PASSWORD is not set in this shell"
+$obsConfig = Get-ObsWebSocketConfig
+if (
+    -not [Environment]::GetEnvironmentVariable("OBS_WEBSOCKET_PASSWORD") -and
+    $obsConfig -and
+    $obsConfig.auth_required -and
+    -not $obsConfig.server_password
+) {
+    Fail "OBS WebSocket authentication is required but no password is available in env or OBS config"
 }
 
-$tcp = Test-NetConnection -ComputerName 127.0.0.1 -Port 4455 -WarningAction SilentlyContinue
+$obsHost = [Environment]::GetEnvironmentVariable("OBS_WEBSOCKET_HOST")
+if (-not $obsHost) {
+    $obsHost = "127.0.0.1"
+}
+$obsPort = Get-ObsWebSocketPort $obsConfig
+
+$tcp = Test-NetConnection -ComputerName $obsHost -Port $obsPort -WarningAction SilentlyContinue
 if (-not $tcp.TcpTestSucceeded) {
-    Fail "OBS WebSocket is not reachable at 127.0.0.1:4455"
+    Fail "OBS WebSocket is not reachable at ${obsHost}:${obsPort}"
 }
 
 Run-Step "pytest" { python -m pytest } | Out-Null
