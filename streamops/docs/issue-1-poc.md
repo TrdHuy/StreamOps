@@ -2,8 +2,8 @@
 
 ## Implemented
 
-- `streamops scene apply gaming-poc` reconciles the managed OBS scene from `config/scenes/gaming-poc.yaml`.
-- `streamops scene review gaming-poc` verifies the scene and writes review artifacts under `artifacts/gaming-poc/<timestamp>/`.
+- `streamops scene apply gaming-poc` reconciles the managed OBS scene from `streamops/config/scenes/gaming-poc.yaml`.
+- `streamops scene review gaming-poc` verifies the scene and writes review artifacts under `streamops/artifacts/gaming-poc/<timestamp>/`.
 - `streamops scene review gaming-poc --video 5` records an optional sample video when OBS is not already streaming or recording.
 - The POC creates/reconciles StreamOps-owned OBS inputs for the current desktop and a browser clock overlay. It does not depend on Diablo IV, `SRC-D4`, `OpenStream V8`, or a live phone camera.
 
@@ -32,7 +32,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/local/e2e-gaming-poc
 ## Artifacts
 
 ```text
-artifacts/
+streamops/artifacts/
 └── gaming-poc/
     └── <timestamp>/
         ├── preview.png
@@ -47,7 +47,7 @@ Open the 5 second video artifact and confirm the bottom-right clock/timer visibl
 The local E2E harness writes under:
 
 ```text
-artifacts/e2e/
+streamops/artifacts/e2e/
 ```
 
 ## Limitations

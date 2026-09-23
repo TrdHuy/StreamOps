@@ -3,13 +3,13 @@ from pathlib import Path
 import pytest
 
 from streamops.errors import StreamOpsError
-import streamops.scene as scene_module
-from streamops.scene import apply_scene, verify_scene
+import streamops.obs.scene as scene_module
+from streamops.obs.scene import apply_scene, verify_scene
 
 from .fake_obs import FakeObsClient
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DESKTOP_SOURCE = "StreamOps Desktop POC"
 CLOCK_SOURCE = "StreamOps Clock POC"
 

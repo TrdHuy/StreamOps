@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from streamops.obs_client import ObsClient
+from streamops.obs.client import ObsClient
 
 
 def test_from_env_reads_local_obs_websocket_config(monkeypatch, tmp_path: Path) -> None:

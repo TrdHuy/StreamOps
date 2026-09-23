@@ -9,10 +9,11 @@ from typing import Any
 
 import yaml
 
-from .errors import ConfigError
+from ..errors import ConfigError
 
 
-DEFAULT_CONFIG_DIR = Path("config") / "scenes"
+DEFAULT_CONFIG_DIR = Path("streamops") / "config" / "scenes"
+DEFAULT_ARTIFACT_DIR = Path("streamops") / "artifacts"
 
 
 @dataclass(frozen=True)

@@ -42,7 +42,7 @@ def test_parse_gaming_poc_config() -> None:
                     "input_kind": "browser_source",
                     "settings": {
                         "is_local_file": True,
-                        "local_file": "obs/assets/clock-overlay.html",
+                        "local_file": "streamops/assets/obs/clock-overlay.html",
                         "width": 845,
                         "height": 475,
                     },
@@ -59,7 +59,7 @@ def test_parse_gaming_poc_config() -> None:
     assert config.overlay.source_name == "StreamOps Clock POC"
     assert config.overlay.managed is True
     assert config.overlay.input_kind == "browser_source"
-    assert config.overlay.settings["local_file"] == "obs/assets/clock-overlay.html"
+    assert config.overlay.settings["local_file"] == "streamops/assets/obs/clock-overlay.html"
 
 
 def test_managed_source_requires_input_kind() -> None:

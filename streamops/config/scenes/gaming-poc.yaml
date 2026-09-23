@@ -30,6 +30,6 @@ sources:
     input_kind: browser_source
     settings:
       is_local_file: true
-      local_file: obs/assets/clock-overlay.html
+      local_file: streamops/assets/obs/clock-overlay.html
       width: 845
       height: 475

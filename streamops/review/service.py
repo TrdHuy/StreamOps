@@ -9,10 +9,10 @@ import shutil
 import time
 from typing import Any, Protocol
 
-from .config import find_project_root, load_scene_config
-from .errors import StreamOpsError
-from .obs_client import ObsClient
-from .scene import Check, VerifyResult, verify_scene
+from ..config import DEFAULT_ARTIFACT_DIR, find_project_root, load_scene_config
+from ..errors import StreamOpsError
+from ..obs.client import ObsClient
+from ..obs.scene import Check, VerifyResult, verify_scene
 
 
 class ReviewClient(Protocol):
@@ -79,7 +79,7 @@ def review_scene(
 
 def _artifact_dir(project_root: Path, scene_name: str, artifact_root: Path | None) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    root = artifact_root or (project_root / "artifacts")
+    root = artifact_root or (project_root / DEFAULT_ARTIFACT_DIR)
     return (root / scene_name / timestamp).resolve()
 
 

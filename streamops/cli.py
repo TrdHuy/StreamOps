@@ -7,8 +7,8 @@ from pathlib import Path
 import sys
 
 from .errors import StreamOpsError
+from .obs.scene import apply_scene
 from .review import review_scene
-from .scene import apply_scene
 
 
 def main(argv: list[str] | None = None) -> int:

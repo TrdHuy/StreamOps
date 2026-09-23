@@ -303,7 +303,7 @@ Automation should produce reviewable evidence when useful.
 Examples:
 
 ```text
-artifacts/
+streamops/artifacts/
 └── 2026-09-21_143000_gaming/
     ├── plan.txt
     ├── before.json
@@ -360,7 +360,7 @@ This keeps the OBS control endpoint local to A.
 
 ## 6. Repository layout
 
-Initial structure:
+Current structure:
 
 ```text
 StreamOps/
@@ -370,48 +370,28 @@ StreamOps/
 ├── .gitignore
 ├── pyproject.toml
 │
-├── docs/
-│   ├── architecture.md
-│   ├── operations.md
-│   └── troubleshooting.md
-│
-├── backlog/
-│   ├── README.md
-│   ├── todo.md
-│   └── ideas.md
-│
-├── config/
-│   ├── hosts.example.yaml
-│   └── obs.example.yaml
-│
-├── obs/
-│   ├── scenes/
-│   │   ├── gaming.yaml
-│   │   ├── starting.yaml
-│   │   ├── brb.yaml
-│   │   └── chatting.yaml
-│   │
-│   ├── inspect.py
-│   ├── plan.py
-│   ├── apply.py
-│   ├── verify.py
-│   └── snapshot.py
-│
 ├── scripts/
-│   ├── powershell/
-│   └── termux/
+│   └── local/
 │
 ├── streamops/
+│   ├── artifacts/
+│   ├── assets/
+│   ├── config/
+│   │   ├── loader.py
+│   │   └── scenes/
+│   ├── docs/
+│   ├── obs/
+│   │   ├── client.py
+│   │   ├── scene.py
+│   │   └── transforms.py
+│   ├── review/
+│   │   └── service.py
+│   ├── tests/
 │   ├── __init__.py
 │   ├── cli.py
-│   ├── obs_client.py
-│   ├── models.py
-│   └── state.py
-│
-├── tests/
-│
-└── artifacts/
-    └── .gitkeep
+│   ├── obs_client.py      # compatibility shim
+│   ├── scene.py           # compatibility shim
+│   └── transforms.py      # compatibility shim
 ```
 
 The structure can evolve as the project grows.

@@ -1,12 +1,12 @@
 from pathlib import Path
 
 from streamops.review import review_scene
-from streamops.scene import apply_scene
+from streamops.obs.scene import apply_scene
 
 from .fake_obs import FakeObsClient
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_review_writes_pass_artifacts(tmp_path: Path) -> None:
@@ -26,7 +26,7 @@ def test_review_resolves_relative_artifact_root(tmp_path: Path, monkeypatch) -> 
     apply_scene("gaming-poc", client=obs, root=ROOT)
     monkeypatch.chdir(tmp_path)
 
-    result = review_scene("gaming-poc", client=obs, root=ROOT, artifact_root=Path("artifacts/e2e"))
+    result = review_scene("gaming-poc", client=obs, root=ROOT, artifact_root=Path("streamops/artifacts/e2e"))
 
     preview_path = Path(result.artifacts["preview"])
     assert result.status == "PASS"

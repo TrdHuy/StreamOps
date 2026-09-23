@@ -24,6 +24,13 @@ streamops = "streamops.cli:main"
 [tool.setuptools.packages.find]
 include = ["streamops*"]
 
+[tool.setuptools.package-data]
+streamops = [
+  "assets/obs/*.html",
+  "config/scenes/*.yaml",
+  "docs/*.md",
+]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["streamops/tests"]
 addopts = "-ra"

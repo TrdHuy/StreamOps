@@ -1,7 +1,7 @@
 param(
     [string]$SceneName = "gaming-poc",
     [int]$VideoSeconds = 5,
-    [string]$ArtifactRoot = "artifacts/e2e"
+    [string]$ArtifactRoot = "streamops/artifacts/e2e"
 )
 
 $ErrorActionPreference = "Stop"
