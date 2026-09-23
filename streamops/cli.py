@@ -7,8 +7,7 @@ from pathlib import Path
 import sys
 
 from .errors import StreamOpsError
-from .obs.scene import apply_scene
-from .review import review_scene
+from .server.main import register_runserver_subparser
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -43,10 +42,14 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser.add_argument("--video", type=int, metavar="SECONDS", help="Record a short OBS sample video.")
     review_parser.set_defaults(func=_review)
 
+    register_runserver_subparser(subparsers)
+
     return parser
 
 
 def _apply(args: argparse.Namespace) -> int:
+    from .obs.scene import apply_scene
+
     result = apply_scene(args.scene_name, config_path=args.config)
     if result.changed:
         print(f"Applied {result.scene}: {len(result.changes)} change(s).")
@@ -58,6 +61,8 @@ def _apply(args: argparse.Namespace) -> int:
 
 
 def _review(args: argparse.Namespace) -> int:
+    from .review import review_scene
+
     result = review_scene(
         args.scene_name,
         config_path=args.config,

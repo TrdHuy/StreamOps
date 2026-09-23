@@ -178,33 +178,23 @@ OBS
 
 This repository is the **engineering source of truth**.
 
-Recommended location on A:
+Current location on A:
 
 ```text
-C:\Workspace\StreamOps
+C:\Users\huy\codex-work\StreamOps
 ```
 
-Do not use `C:\Scripts` as the development repository.
-
-`C:\Scripts` is the runtime command location already used by the machine.
-
-Recommended model:
+Development and runtime both stay in this repository:
 
 ```text
-C:\Workspace\StreamOps
-        │
-        │ source / Git / Codex workspace
-        │
-        └── deploy
-               ↓
-C:\Scripts\streamops
-        │
-        │ runtime commands
-        ↓
-OBS / Steam / Windows
+C:\Users\huy\codex-work\StreamOps
+├── .venv\             # repo-local Python environment
+├── .streamops\node\   # ignored runtime state, captures, and logs
+├── scripts\            # lifecycle commands
+└── streamops\          # application source
 ```
 
-This separation prevents generated files, experiments, Git metadata, and backlog documents from polluting the runtime command directory.
+Do not copy or deploy StreamOps source and commands into `C:\Scripts`. Existing files there are preserved.
 
 ---
 
@@ -632,27 +622,47 @@ config/hosts.example.yaml
 
 ## 12. Runtime deployment
 
-The development repository lives at:
+StreamOps runs in place from the current repository:
 
 ```text
-C:\Workspace\StreamOps
+C:\Users\huy\codex-work\StreamOps
 ```
 
-Runtime wrappers may be deployed to:
+Bootstrap the repo-local environment:
+
+```powershell
+.\scripts\devices\a-windows\install-streamops-node.ps1 -Dev
+```
+
+Run the Windows node in the foreground with an explicit port:
+
+```powershell
+.\.venv\Scripts\streamops.exe runserver --port 8785
+```
+
+Or manage a hidden background process from the repository:
+
+```powershell
+.\scripts\devices\a-windows\start-streamops-node.ps1 -Port 8785
+.\scripts\devices\a-windows\status-streamops-node.ps1
+.\scripts\devices\a-windows\stop-streamops-node.ps1
+```
+
+Runtime state and `latest.png` are written only to `.streamops\node`. CLI flags override environment variables; supported variables are documented in `.env.example`.
+
+To allow device B through Windows Firewall, run the bootstrap once from an elevated shell with `-ConfigureFirewall`. The rule is limited to the Private profile and local subnet.
+
+The node serves the web UI at `/` and exposes:
 
 ```text
-C:\Scripts\streamops
+GET  /api/v1/health
+POST /api/v1/screen/capture
+GET  /api/v1/screen/latest
 ```
 
-Existing files in:
+If the interactive Windows desktop is temporarily unavailable, health remains online with `capture_ready: false`; capture requests return `503` without replacing the previous successful image.
 
-```text
-C:\Scripts
-```
-
-must not be deleted or overwritten unintentionally.
-
-Existing commands such as:
+Existing commands in `C:\Scripts`, such as:
 
 ```text
 steam-switch
@@ -662,7 +672,7 @@ internet-off
 
 remain valid.
 
-StreamOps should integrate with them rather than silently replace them.
+StreamOps does not modify or replace them.
 
 ---
 

@@ -14,12 +14,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+server = [
+  "dxcam>=0.3.0; sys_platform == 'win32'",
+  "fastapi>=0.141.1",
+  "pillow>=12.3.0",
+  "uvicorn>=0.53.0",
+]
 dev = [
+  "httpx2>=2.13.1",
   "pytest>=9.1.1",
 ]
 
 [project.scripts]
 streamops = "streamops.cli:main"
+streamops-node = "streamops.server.main:main"
 
 [tool.setuptools.packages.find]
 include = ["streamops*"]
@@ -29,8 +37,9 @@ streamops = [
   "assets/obs/*.html",
   "config/scenes/*.yaml",
   "docs/*.md",
+  "server/web/*",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["streamops/tests"]
+testpaths = ["streamops/tests", "streamops/server/tests"]
 addopts = "-ra"
