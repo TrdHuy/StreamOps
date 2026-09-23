@@ -4,8 +4,8 @@
 
 - `streamops scene apply gaming-poc` reconciles the managed OBS scene from `config/scenes/gaming-poc.yaml`.
 - `streamops scene review gaming-poc` verifies the scene and writes review artifacts under `artifacts/gaming-poc/<timestamp>/`.
-- `streamops scene review gaming-poc --video 15` records an optional sample video when OBS is not already streaming or recording.
-- The POC reuses existing OBS sources `SRC-D4` and `OpenStream V8`; it does not create duplicate inputs.
+- `streamops scene review gaming-poc --video 5` records an optional sample video when OBS is not already streaming or recording.
+- The POC creates/reconciles StreamOps-owned OBS inputs for the current desktop and a browser clock overlay. It does not depend on Diablo IV, `SRC-D4`, `OpenStream V8`, or a live phone camera.
 
 ## Reviewer Commands
 
@@ -16,8 +16,9 @@ $env:OBS_WEBSOCKET_PORT = "4455"
 $env:OBS_WEBSOCKET_PASSWORD = "<password-if-enabled>"
 
 streamops scene apply gaming-poc
+streamops scene apply gaming-poc
 streamops scene review gaming-poc
-streamops scene review gaming-poc --video 15
+streamops scene review gaming-poc --video 5
 ```
 
 Local OBS E2E harness:
@@ -40,6 +41,7 @@ artifacts/
 
 When `--video` is used, OBS writes the video to its configured recording directory and the output path is recorded in `verify.json` and `report.md`.
 StreamOps waits for that file to finalize, copies it into the same timestamped review artifact directory as `sample-<seconds>s.<ext>`, and records both the copied artifact path and original OBS output path.
+Open the 5 second video artifact and confirm the bottom-right clock/timer visibly changes throughout the clip.
 
 The local E2E harness writes under:
 
@@ -50,8 +52,8 @@ artifacts/e2e/
 ## Limitations
 
 - Canvas/output/FPS is global OBS video state, not scene-local state. This POC sets OBS to `3840x2160@30` because issue #1 requires it.
-- The configured OBS sources must already exist. Camera transport from device D is intentionally out of scope.
-- Scene layout can be applied while sources are inactive or reporting runtime size `0x0`; camera sizing uses OBS bounds rather than live frame dimensions.
+- OBS must provide the standard Windows `monitor_capture` input kind and the `browser_source` plugin.
+- Scene layout can be applied while sources are inactive or reporting runtime size `0x0`; overlay sizing uses OBS bounds rather than live frame dimensions.
 - Visible unmanaged items inside `gaming-poc` are preserved and reported as warnings instead of being deleted.
 - This host currently needs Python installed before the CLI can run.
 

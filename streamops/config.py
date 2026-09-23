@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
 from typing import Any
@@ -35,6 +35,9 @@ class SourceConfig:
     width_percent: float | None = None
     margin_right: float = 0
     margin_bottom: float = 0
+    managed: bool = False
+    input_kind: str | None = None
+    settings: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -49,7 +52,16 @@ class SceneConfig:
 
     @property
     def camera(self) -> SourceConfig:
-        return self.source_by_role("camera")
+        return self.overlay
+
+    @property
+    def overlay(self) -> SourceConfig:
+        for role in ("overlay", "camera"):
+            try:
+                return self.source_by_role(role)
+            except ConfigError:
+                continue
+        raise ConfigError(f"Scene {self.name!r} is missing an 'overlay' source.")
 
     def source_by_role(self, role: str) -> SourceConfig:
         for source in self.sources:
@@ -126,6 +138,16 @@ def parse_scene_config(raw: dict[str, Any], *, expected_name: str, source: str =
     for key, value in sources_raw.items():
         if not isinstance(key, str) or not isinstance(value, dict):
             raise ConfigError(f"{source}: every source entry must be a mapping.")
+        input_kind = _optional_str(value, "input_kind", source)
+        managed = _optional_bool(value, "managed", source)
+        if managed is None:
+            managed = input_kind is not None
+        settings = _optional_mapping(value, "settings", source) or {}
+        if managed and input_kind is None:
+            raise ConfigError(f"{source}: managed source {key!r} requires 'input_kind'.")
+        if not managed and settings:
+            raise ConfigError(f"{source}: source {key!r} has settings but is not managed.")
+
         sources.append(
             SourceConfig(
                 key=key,
@@ -137,13 +159,17 @@ def parse_scene_config(raw: dict[str, Any], *, expected_name: str, source: str =
                 width_percent=_optional_number(value, "width_percent", source),
                 margin_right=_optional_number(value, "margin_right", source) or 0,
                 margin_bottom=_optional_number(value, "margin_bottom", source) or 0,
+                managed=managed,
+                input_kind=input_kind,
+                settings=settings,
             )
         )
 
     roles = {source.role for source in sources}
-    missing_roles = {"main", "camera"} - roles
-    if missing_roles:
-        raise ConfigError(f"{source}: missing required source roles: {', '.join(sorted(missing_roles))}.")
+    if "main" not in roles:
+        raise ConfigError(f"{source}: missing required source roles: main.")
+    if not ({"overlay", "camera"} & roles):
+        raise ConfigError(f"{source}: missing required source roles: overlay.")
     if len(roles) != len(sources):
         raise ConfigError(f"{source}: source roles must be unique.")
 
@@ -175,6 +201,26 @@ def _optional_str(raw: dict[str, Any], key: str, source: str) -> str | None:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{source}: {key!r} must be a non-empty string when set.")
     return value
+
+
+def _optional_bool(raw: dict[str, Any], key: str, source: str) -> bool | None:
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise ConfigError(f"{source}: {key!r} must be a boolean when set.")
+    return value
+
+
+def _optional_mapping(raw: dict[str, Any], key: str, source: str) -> dict[str, Any] | None:
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError(f"{source}: {key!r} must be a mapping when set.")
+    if not all(isinstance(setting_key, str) for setting_key in value):
+        raise ConfigError(f"{source}: {key!r} keys must be strings.")
+    return dict(value)
 
 
 def _require_int(raw: dict[str, Any], key: str, source: str) -> int:

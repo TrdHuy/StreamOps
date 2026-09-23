@@ -9,6 +9,8 @@ from .fake_obs import FakeObsClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
+DESKTOP_SOURCE = "StreamOps Desktop POC"
+CLOCK_SOURCE = "StreamOps Clock POC"
 
 
 def test_apply_creates_scene_and_is_idempotent() -> None:
@@ -19,7 +21,8 @@ def test_apply_creates_scene_and_is_idempotent() -> None:
 
     assert first.changed is True
     assert second.changed is False
-    assert [item["sourceName"] for item in obs.scenes["gaming-poc"]] == ["SRC-D4", "OpenStream V8"]
+    assert [item["sourceName"] for item in obs.scenes["gaming-poc"]] == [DESKTOP_SOURCE, CLOCK_SOURCE]
+    assert [item["inputName"] for item in obs.inputs] == [DESKTOP_SOURCE, CLOCK_SOURCE]
     assert obs.video_settings["baseWidth"] == 3840
     assert obs.video_settings["fpsNumerator"] == 30
 
@@ -27,31 +30,31 @@ def test_apply_creates_scene_and_is_idempotent() -> None:
 def test_apply_repairs_wrong_transform() -> None:
     obs = FakeObsClient()
     apply_scene("gaming-poc", client=obs, root=ROOT)
-    camera_id = next(
+    overlay_id = next(
         int(item["sceneItemId"])
         for item in obs.scenes["gaming-poc"]
-        if item["sourceName"] == "OpenStream V8"
+        if item["sourceName"] == CLOCK_SOURCE
     )
-    obs.transforms[camera_id]["positionX"] = 123
+    obs.transforms[overlay_id]["positionX"] = 123
 
     result = apply_scene("gaming-poc", client=obs, root=ROOT)
 
     assert result.changed is True
-    assert obs.transforms[camera_id]["positionX"] == 3760
+    assert obs.transforms[overlay_id]["positionX"] == 3760
 
 
 def test_apply_removes_duplicate_configured_items_only() -> None:
     obs = FakeObsClient()
     obs.create_scene("gaming-poc")
-    obs.create_scene_item("gaming-poc", "SRC-D4")
-    obs.create_scene_item("gaming-poc", "SRC-D4")
-    obs.inputs.append({"inputName": "Unmanaged"})
+    obs.create_input("gaming-poc", DESKTOP_SOURCE, "monitor_capture", {}, enabled=True)
+    obs.create_scene_item("gaming-poc", DESKTOP_SOURCE)
+    obs.inputs.append({"inputName": "Unmanaged", "inputKind": "browser_source"})
     obs.create_scene_item("gaming-poc", "Unmanaged")
 
     apply_scene("gaming-poc", client=obs, root=ROOT)
 
     names = [item["sourceName"] for item in obs.scenes["gaming-poc"]]
-    assert names.count("SRC-D4") == 1
+    assert names.count(DESKTOP_SOURCE) == 1
     assert "Unmanaged" in names
 
 
@@ -64,6 +67,17 @@ def test_verify_passes_after_apply() -> None:
     assert result.status == "PASS"
 
 
+def test_verify_fails_when_managed_input_settings_drift() -> None:
+    obs = FakeObsClient()
+    apply_scene("gaming-poc", client=obs, root=ROOT)
+    obs.input_settings[CLOCK_SOURCE]["height"] = 100
+
+    result = verify_scene("gaming-poc", client=obs, root=ROOT)
+
+    assert result.status == "FAIL"
+    assert any(check.id == "source.overlay.settings" and check.status == "FAIL" for check in result.checks)
+
+
 def test_apply_refuses_video_setting_change_while_recording() -> None:
     obs = FakeObsClient()
     obs.recording = True
@@ -72,12 +86,12 @@ def test_apply_refuses_video_setting_change_while_recording() -> None:
         apply_scene("gaming-poc", client=obs, root=ROOT)
 
 
-def test_apply_preflights_sources_before_video_mutation() -> None:
+def test_apply_preflights_managed_input_kind_before_video_mutation() -> None:
     obs = FakeObsClient()
-    obs.inputs = [item for item in obs.inputs if item["inputName"] != "OpenStream V8"]
+    obs.input_kinds = ["monitor_capture"]
     original_video_settings = dict(obs.video_settings)
 
-    with pytest.raises(StreamOpsError, match="OpenStream V8"):
+    with pytest.raises(StreamOpsError, match="browser_source"):
         apply_scene("gaming-poc", client=obs, root=ROOT)
 
     assert obs.video_settings == original_video_settings
@@ -87,16 +101,45 @@ def test_apply_handles_existing_source_with_zero_runtime_size() -> None:
     obs = FakeObsClient()
 
     first = apply_scene("gaming-poc", client=obs, root=ROOT)
-    camera_id = next(
+    overlay_id = next(
         int(item["sceneItemId"])
         for item in obs.scenes["gaming-poc"]
-        if item["sourceName"] == "OpenStream V8"
+        if item["sourceName"] == CLOCK_SOURCE
     )
-    obs.transforms[camera_id]["sourceWidth"] = 0
-    obs.transforms[camera_id]["sourceHeight"] = 0
+    obs.transforms[overlay_id]["sourceWidth"] = 0
+    obs.transforms[overlay_id]["sourceHeight"] = 0
     second = apply_scene("gaming-poc", client=obs, root=ROOT)
 
     assert first.changed is True
     assert second.changed is False
-    assert obs.transforms[camera_id]["boundsType"] == "OBS_BOUNDS_SCALE_TO_WIDTH"
-    assert obs.transforms[camera_id]["boundsWidth"] == 844.8
+    assert obs.transforms[overlay_id]["boundsType"] == "OBS_BOUNDS_SCALE_TO_WIDTH"
+    assert obs.transforms[overlay_id]["boundsWidth"] == 844.8
+    assert obs.transforms[overlay_id]["boundsHeight"] == 1.0
+
+
+def test_apply_reconciles_managed_input_settings() -> None:
+    obs = FakeObsClient()
+    apply_scene("gaming-poc", client=obs, root=ROOT)
+    obs.input_settings[CLOCK_SOURCE]["width"] = 320
+
+    result = apply_scene("gaming-poc", client=obs, root=ROOT)
+
+    assert result.changed is True
+    assert obs.input_settings[CLOCK_SOURCE]["width"] == 844
+
+
+def test_apply_refuses_existing_managed_source_with_wrong_kind_before_video_mutation() -> None:
+    obs = FakeObsClient()
+    obs.inputs.append(
+        {
+            "inputName": CLOCK_SOURCE,
+            "inputKind": "monitor_capture",
+            "unversionedInputKind": "monitor_capture",
+        }
+    )
+    original_video_settings = dict(obs.video_settings)
+
+    with pytest.raises(StreamOpsError, match="already exists with input kind"):
+        apply_scene("gaming-poc", client=obs, root=ROOT)
+
+    assert obs.video_settings == original_video_settings

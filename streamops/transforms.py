@@ -16,8 +16,8 @@ TRANSFORM_TOLERANCE = 0.01
 def desired_transform(config: SceneConfig, source: SourceConfig, current_transform: dict[str, Any]) -> dict[str, Any]:
     if source.role == "main":
         return _main_transform(config)
-    if source.role == "camera":
-        return _camera_transform(config, source, current_transform)
+    if source.role in {"camera", "overlay"}:
+        return _overlay_transform(config, source, current_transform)
     raise ConfigError(f"Unsupported source role: {source.role!r}")
 
 
@@ -38,15 +38,15 @@ def _main_transform(config: SceneConfig) -> dict[str, Any]:
     }
 
 
-def _camera_transform(
+def _overlay_transform(
     config: SceneConfig,
     source: SourceConfig,
     current_transform: dict[str, Any],
 ) -> dict[str, Any]:
     if source.anchor != "bottom_right":
-        raise ConfigError(f"Unsupported camera anchor for {source.source_name!r}: {source.anchor!r}")
+        raise ConfigError(f"Unsupported overlay anchor for {source.source_name!r}: {source.anchor!r}")
     if source.width_percent is None or source.width_percent <= 0:
-        raise ConfigError(f"Camera source {source.source_name!r} requires a positive width_percent.")
+        raise ConfigError(f"Overlay source {source.source_name!r} requires a positive width_percent.")
 
     target_width = config.video.base_width * (source.width_percent / 100.0)
 

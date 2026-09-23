@@ -75,6 +75,11 @@ function Assert-ReviewArtifacts([string]$ReviewDir, [bool]$RequireVideo) {
             Fail "video artifact is not in review directory: $videoPath"
         }
 
+        $reportText = Get-Content -LiteralPath $reportPath -Raw
+        if ($reportText -notmatch [regex]::Escape($videoPath)) {
+            Fail "report.md does not reference video artifact: $videoPath"
+        }
+
         $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
         if (-not $ffprobe) {
             Fail "ffprobe is required to validate that the video opens"
@@ -136,3 +141,4 @@ Write-Host "- streamops scene review $SceneName --artifact-root $videoRoot --vid
 Write-Host "artifacts:"
 Write-Host "- review: $reviewDir"
 Write-Host "- video: $videoReviewDir"
+Write-Host "reviewer check: open the video artifact and confirm the clock/timer moves for the full sample"

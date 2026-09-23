@@ -179,6 +179,39 @@ class ObsClient:
     def get_input_list(self) -> list[dict[str, Any]]:
         return list(self.request("GetInputList").get("inputs", []))
 
+    def get_input_kind_list(self) -> list[str]:
+        return list(self.request("GetInputKindList", {"unversioned": True}).get("inputKinds", []))
+
+    def create_input(
+        self,
+        scene_name: str,
+        input_name: str,
+        input_kind: str,
+        input_settings: dict[str, Any],
+        *,
+        enabled: bool = True,
+    ) -> int:
+        data = self.request(
+            "CreateInput",
+            {
+                "sceneName": scene_name,
+                "inputName": input_name,
+                "inputKind": input_kind,
+                "inputSettings": input_settings,
+                "sceneItemEnabled": enabled,
+            },
+        )
+        return int(data["sceneItemId"])
+
+    def get_input_settings(self, input_name: str) -> dict[str, Any]:
+        return dict(self.request("GetInputSettings", {"inputName": input_name}).get("inputSettings", {}))
+
+    def set_input_settings(self, input_name: str, settings: dict[str, Any], *, overlay: bool = True) -> None:
+        self.request(
+            "SetInputSettings",
+            {"inputName": input_name, "inputSettings": settings, "overlay": overlay},
+        )
+
     def get_scene_item_list(self, scene_name: str) -> list[dict[str, Any]]:
         return list(self.request("GetSceneItemList", {"sceneName": scene_name}).get("sceneItems", []))
 

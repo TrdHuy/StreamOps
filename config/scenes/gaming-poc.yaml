@@ -7,15 +7,25 @@ video:
   fps: 30
 sources:
   main:
-    source_name: SRC-D4
+    source_name: StreamOps Desktop POC
     role: main
     layer: 0
     fit: stretch
-  camera:
-    source_name: OpenStream V8
-    role: camera
+    managed: true
+    input_kind: monitor_capture
+    settings: {}
+  overlay:
+    source_name: StreamOps Clock POC
+    role: overlay
     layer: 1
     anchor: bottom_right
     width_percent: 22
     margin_right: 80
     margin_bottom: 80
+    managed: true
+    input_kind: browser_source
+    settings:
+      is_local_file: true
+      local_file: obs/assets/clock-overlay.html
+      width: 844
+      height: 475

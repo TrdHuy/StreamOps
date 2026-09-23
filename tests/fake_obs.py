@@ -4,6 +4,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from streamops.errors import StreamOpsError
+
 
 class FakeObsClient:
     def __init__(self) -> None:
@@ -16,10 +18,9 @@ class FakeObsClient:
             "fpsNumerator": 60,
             "fpsDenominator": 1,
         }
-        self.inputs = [
-            {"inputName": "SRC-D4"},
-            {"inputName": "OpenStream V8"},
-        ]
+        self.input_kinds = ["monitor_capture", "browser_source"]
+        self.inputs: list[dict[str, Any]] = []
+        self.input_settings: dict[str, dict[str, Any]] = {}
         self.scenes: dict[str, list[dict[str, Any]]] = {}
         self.transforms: dict[int, dict[str, Any]] = {}
         self.next_item_id = 1
@@ -50,6 +51,37 @@ class FakeObsClient:
     def get_input_list(self) -> list[dict[str, Any]]:
         return deepcopy(self.inputs)
 
+    def get_input_kind_list(self) -> list[str]:
+        return list(self.input_kinds)
+
+    def create_input(
+        self,
+        scene_name: str,
+        input_name: str,
+        input_kind: str,
+        input_settings: dict[str, Any],
+        *,
+        enabled: bool = True,
+    ) -> int:
+        self.inputs.append(
+            {
+                "inputName": input_name,
+                "inputKind": input_kind,
+                "unversionedInputKind": input_kind,
+            }
+        )
+        self.input_settings[input_name] = deepcopy(input_settings)
+        return self.create_scene_item(scene_name, input_name, enabled=enabled)
+
+    def get_input_settings(self, input_name: str) -> dict[str, Any]:
+        return deepcopy(self.input_settings.get(input_name, {}))
+
+    def set_input_settings(self, input_name: str, settings: dict[str, Any], *, overlay: bool = True) -> None:
+        if overlay:
+            self.input_settings.setdefault(input_name, {}).update(deepcopy(settings))
+        else:
+            self.input_settings[input_name] = deepcopy(settings)
+
     def get_scene_item_list(self, scene_name: str) -> list[dict[str, Any]]:
         return deepcopy(self.scenes.get(scene_name, []))
 
@@ -63,9 +95,12 @@ class FakeObsClient:
             "sceneItemIndex": len(self.scenes.setdefault(scene_name, [])),
         }
         self.scenes[scene_name].append(item)
+        settings = self.input_settings.get(source_name, {})
+        source_width = int(settings.get("width", 3840 if "Desktop" in source_name else 1920))
+        source_height = int(settings.get("height", 2160 if "Desktop" in source_name else 1080))
         self.transforms[scene_item_id] = {
-            "sourceWidth": 3840 if source_name == "SRC-D4" else 1920,
-            "sourceHeight": 2160 if source_name == "SRC-D4" else 1080,
+            "sourceWidth": source_width,
+            "sourceHeight": source_height,
             "alignment": 5,
             "positionX": 0,
             "positionY": 0,
@@ -94,6 +129,10 @@ class FakeObsClient:
         return deepcopy(self.transforms[scene_item_id])
 
     def set_scene_item_transform(self, scene_name: str, scene_item_id: int, transform: dict[str, Any]) -> None:
+        if "boundsHeight" in transform and float(transform["boundsHeight"]) < 1.0:
+            raise StreamOpsError(
+                "SetSceneItemTransform failed (402): The field value of `boundsHeight` is below the minimum of `1.000000`"
+            )
         self.transforms[scene_item_id].update(transform)
 
     def set_scene_item_enabled(self, scene_name: str, scene_item_id: int, enabled: bool) -> None:

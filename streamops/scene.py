@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from .config import SceneConfig, load_scene_config
-from .errors import StreamOpsError
+from .config import SceneConfig, SourceConfig, find_project_root, load_scene_config
+from .errors import ConfigError, StreamOpsError
 from .obs_client import ObsClient
 from .transforms import desired_transform, transform_differences, transform_matches
 
@@ -23,6 +23,18 @@ class SceneClient(Protocol):
     def get_scene_list(self) -> list[dict[str, Any]]: ...
     def create_scene(self, scene_name: str) -> None: ...
     def get_input_list(self) -> list[dict[str, Any]]: ...
+    def get_input_kind_list(self) -> list[str]: ...
+    def create_input(
+        self,
+        scene_name: str,
+        input_name: str,
+        input_kind: str,
+        input_settings: dict[str, Any],
+        *,
+        enabled: bool = True,
+    ) -> int: ...
+    def get_input_settings(self, input_name: str) -> dict[str, Any]: ...
+    def set_input_settings(self, input_name: str, settings: dict[str, Any], *, overlay: bool = True) -> None: ...
     def get_scene_item_list(self, scene_name: str) -> list[dict[str, Any]]: ...
     def create_scene_item(self, scene_name: str, source_name: str, *, enabled: bool = True) -> int: ...
     def remove_scene_item(self, scene_name: str, scene_item_id: int) -> None: ...
@@ -97,16 +109,18 @@ def apply_scene(
     root: Path | None = None,
     config_path: Path | None = None,
 ) -> ApplyResult:
-    config = load_scene_config(scene_name, root=root, config_path=config_path)
+    project_root = root or find_project_root()
+    config = load_scene_config(scene_name, root=project_root, config_path=config_path)
     owns_client = client is None
     obs: SceneClient = client or ObsClient.from_env()
 
     changes: list[Change] = []
     try:
         obs.get_version()
-        _ensure_configured_sources_exist(obs, config)
+        _preflight_configured_sources(obs, config, project_root)
         _ensure_video_settings(obs, config, changes)
         _ensure_scene_exists(obs, config, changes)
+        _ensure_managed_inputs(obs, config, project_root, changes)
         _remove_duplicate_configured_items(obs, config, changes)
         item_ids = _ensure_configured_scene_items(obs, config, changes)
         _apply_transforms(obs, config, item_ids, changes)
@@ -126,7 +140,8 @@ def verify_scene(
     root: Path | None = None,
     config_path: Path | None = None,
 ) -> VerifyResult:
-    config = load_scene_config(scene_name, root=root, config_path=config_path)
+    project_root = root or find_project_root()
+    config = load_scene_config(scene_name, root=project_root, config_path=config_path)
     owns_client = client is None
     obs: SceneClient = client or ObsClient.from_env()
     result = VerifyResult(
@@ -140,7 +155,7 @@ def verify_scene(
         version = obs.get_version()
         result.obs_version = version.get("obsVersion") or version.get("obsStudioVersion")
         _verify_video(obs, config, result)
-        _verify_sources(obs, config, result)
+        _verify_sources(obs, config, result, project_root)
         scene_exists = _scene_exists(obs, config.name)
         result.add(
             Check(
@@ -174,17 +189,97 @@ def _ensure_video_settings(obs: SceneClient, config: SceneConfig, changes: list[
     changes.append(Change("video.set", f"Set OBS video to {config.video.base_width}x{config.video.base_height}@{config.video.fps}."))
 
 
-def _ensure_configured_sources_exist(obs: SceneClient, config: SceneConfig) -> None:
-    inputs = {item.get("inputName") for item in obs.get_input_list()}
+def _preflight_configured_sources(obs: SceneClient, config: SceneConfig, root: Path) -> None:
+    inputs = _inputs_by_name(obs)
     scenes = {item.get("sceneName") for item in obs.get_scene_list()}
-    available_sources = inputs | scenes
-    missing = [source.source_name for source in config.sources if source.source_name not in available_sources]
-    if missing:
+    available_sources = set(inputs) | scenes
+
+    missing_external = [
+        source.source_name
+        for source in config.sources
+        if not source.managed and source.source_name not in available_sources
+    ]
+    if missing_external:
         raise StreamOpsError(
             "Configured OBS source(s) are missing: "
-            + ", ".join(repr(item) for item in missing)
+            + ", ".join(repr(item) for item in missing_external)
             + ". Create or rename the sources in OBS, or update the scene config."
         )
+
+    managed_sources = [source for source in config.sources if source.managed]
+    if not managed_sources:
+        return
+
+    input_kinds = set(obs.get_input_kind_list())
+    unsupported = sorted(
+        {
+            source.input_kind
+            for source in managed_sources
+            if source.input_kind is not None and source.input_kind not in input_kinds
+        }
+    )
+    if unsupported:
+        raise StreamOpsError(
+            "OBS does not support required input kind(s): "
+            + ", ".join(repr(item) for item in unsupported)
+            + ". Install/enable the required OBS source plugins before applying."
+        )
+
+    for source in managed_sources:
+        _resolve_input_settings(source, root)
+        if source.source_name in scenes:
+            raise StreamOpsError(
+                f"Managed source {source.source_name!r} conflicts with an existing OBS scene name."
+            )
+
+        existing = inputs.get(source.source_name)
+        if existing is None:
+            continue
+        actual_kinds = {
+            kind
+            for kind in (existing.get("inputKind"), existing.get("unversionedInputKind"))
+            if isinstance(kind, str)
+        }
+        if actual_kinds and source.input_kind not in actual_kinds:
+            raise StreamOpsError(
+                f"Managed source {source.source_name!r} already exists with input kind "
+                f"{sorted(actual_kinds)!r}, expected {source.input_kind!r}. Rename the existing source or update the config."
+            )
+
+
+def _ensure_managed_inputs(
+    obs: SceneClient,
+    config: SceneConfig,
+    root: Path,
+    changes: list[Change],
+) -> None:
+    inputs = _inputs_by_name(obs)
+    for source in config.sources:
+        if not source.managed:
+            continue
+
+        desired_settings = _resolve_input_settings(source, root)
+        if source.source_name not in inputs:
+            if source.input_kind is None:
+                raise ConfigError(f"Managed source {source.source_name!r} requires an input_kind.")
+            obs.create_input(
+                config.name,
+                source.source_name,
+                source.input_kind,
+                desired_settings,
+                enabled=True,
+            )
+            changes.append(
+                Change("input.create", f"Created managed {source.input_kind!r} input {source.source_name!r}.")
+            )
+            inputs[source.source_name] = {"inputName": source.source_name, "inputKind": source.input_kind}
+            continue
+
+        current_settings = obs.get_input_settings(source.source_name)
+        if _settings_match(current_settings, desired_settings):
+            continue
+        obs.set_input_settings(source.source_name, desired_settings, overlay=True)
+        changes.append(Change("input.settings", f"Updated settings for managed input {source.source_name!r}."))
 
 
 def _ensure_scene_exists(obs: SceneClient, config: SceneConfig, changes: list[Change]) -> None:
@@ -265,7 +360,8 @@ def _apply_order(
     changes: list[Change],
 ) -> None:
     main_id = item_ids[config.main.role]
-    camera_id = item_ids[config.camera.role]
+    overlay = config.overlay
+    overlay_id = item_ids[overlay.role]
     items = obs.get_scene_item_list(config.name)
     current = {int(item["sceneItemId"]): int(item.get("sceneItemIndex", 0)) for item in items}
 
@@ -276,9 +372,9 @@ def _apply_order(
     items_after_main = obs.get_scene_item_list(config.name)
     max_index = max(0, len(items_after_main) - 1)
     current_after_main = {int(item["sceneItemId"]): int(item.get("sceneItemIndex", 0)) for item in items_after_main}
-    if current_after_main.get(camera_id) != max_index:
-        obs.set_scene_item_index(config.name, camera_id, max_index)
-        changes.append(Change("item.order", f"Moved {config.camera.source_name!r} above the main source."))
+    if current_after_main.get(overlay_id) != max_index:
+        obs.set_scene_item_index(config.name, overlay_id, max_index)
+        changes.append(Change("item.order", f"Moved {overlay.source_name!r} above the main source."))
 
 
 def _verify_video(obs: SceneClient, config: SceneConfig, result: VerifyResult) -> None:
@@ -295,8 +391,9 @@ def _verify_video(obs: SceneClient, config: SceneConfig, result: VerifyResult) -
     )
 
 
-def _verify_sources(obs: SceneClient, config: SceneConfig, result: VerifyResult) -> None:
-    inputs = {item.get("inputName") for item in obs.get_input_list()}
+def _verify_sources(obs: SceneClient, config: SceneConfig, result: VerifyResult, root: Path) -> None:
+    input_items = _inputs_by_name(obs)
+    inputs = set(input_items)
     scenes = {item.get("sceneName") for item in obs.get_scene_list()}
     available_sources = inputs | scenes
     for source in config.sources:
@@ -308,6 +405,38 @@ def _verify_sources(obs: SceneClient, config: SceneConfig, result: VerifyResult)
                 message=f"Source {source.source_name!r} exists." if exists else f"Source {source.source_name!r} is missing.",
                 expected=True,
                 actual=exists,
+            )
+        )
+        if not exists or not source.managed:
+            continue
+
+        input_item = input_items.get(source.source_name) or {}
+        actual_kinds = {
+            kind
+            for kind in (input_item.get("inputKind"), input_item.get("unversionedInputKind"))
+            if isinstance(kind, str)
+        }
+        kind_matches = not actual_kinds or source.input_kind in actual_kinds
+        result.add(
+            Check(
+                id=f"source.{source.role}.kind",
+                status="PASS" if kind_matches else "FAIL",
+                message=f"{source.source_name!r} uses the expected managed input kind.",
+                expected=source.input_kind,
+                actual=sorted(actual_kinds) or None,
+            )
+        )
+
+        expected_settings = _resolve_input_settings(source, root)
+        current_settings = obs.get_input_settings(source.source_name)
+        settings_differences = _settings_differences(current_settings, expected_settings)
+        result.add(
+            Check(
+                id=f"source.{source.role}.settings",
+                status="PASS" if not settings_differences else "FAIL",
+                message=f"{source.source_name!r} managed input settings match desired values.",
+                expected=expected_settings,
+                actual=settings_differences or {key: current_settings.get(key) for key in expected_settings},
             )
         )
 
@@ -373,15 +502,16 @@ def _verify_items(obs: SceneClient, config: SceneConfig, result: VerifyResult) -
             )
         )
 
-    if "main" in indexes and "camera" in indexes:
-        ordered = indexes["main"] < indexes["camera"]
+    overlay_role = config.overlay.role
+    if "main" in indexes and overlay_role in indexes:
+        ordered = indexes["main"] < indexes[overlay_role]
         result.add(
             Check(
                 id="item.order",
                 status="PASS" if ordered else "FAIL",
-                message="Camera item is above the main source.",
-                expected="main index < camera index",
-                actual={"main": indexes["main"], "camera": indexes["camera"]},
+                message="Overlay item is above the main source.",
+                expected=f"main index < {overlay_role} index",
+                actual={"main": indexes["main"], overlay_role: indexes[overlay_role]},
             )
         )
 
@@ -390,11 +520,70 @@ def _scene_exists(obs: SceneClient, scene_name: str) -> bool:
     return any(item.get("sceneName") == scene_name for item in obs.get_scene_list())
 
 
+def _inputs_by_name(obs: SceneClient) -> dict[str, dict[str, Any]]:
+    return {
+        str(item["inputName"]): item
+        for item in obs.get_input_list()
+        if isinstance(item.get("inputName"), str)
+    }
+
+
 def _find_scene_item(items: list[dict[str, Any]], source_name: str) -> dict[str, Any] | None:
     for item in items:
         if item.get("sourceName") == source_name:
             return item
     return None
+
+
+def _resolve_input_settings(source: SourceConfig, root: Path) -> dict[str, Any]:
+    settings = dict(source.settings)
+    local_file = settings.get("local_file")
+    if local_file is None:
+        return settings
+    if not isinstance(local_file, str) or not local_file.strip():
+        raise ConfigError(f"Managed source {source.source_name!r} has invalid 'local_file' setting.")
+
+    path = Path(local_file).expanduser()
+    if not path.is_absolute():
+        path = root / path
+    path = path.resolve()
+    if not path.exists():
+        raise ConfigError(f"Managed source {source.source_name!r} local_file does not exist: {path}")
+    settings["local_file"] = str(path)
+    return settings
+
+
+def _settings_match(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
+    return not _settings_differences(actual, expected)
+
+
+def _settings_differences(actual: dict[str, Any], expected: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    differences: dict[str, dict[str, Any]] = {}
+    for key, expected_value in expected.items():
+        actual_value = actual.get(key)
+        if not _setting_values_match(key, actual_value, expected_value):
+            differences[key] = {"expected": expected_value, "actual": actual_value}
+    return differences
+
+
+def _setting_values_match(key: str, actual: Any, expected: Any) -> bool:
+    if key == "local_file" and isinstance(actual, str) and isinstance(expected, str):
+        return _normalized_file_path(actual) == _normalized_file_path(expected)
+    if isinstance(expected, bool):
+        return bool(actual) is expected
+    if isinstance(expected, int | float) and not isinstance(expected, bool):
+        try:
+            return abs(float(actual) - float(expected)) <= 0.01
+        except (TypeError, ValueError):
+            return False
+    return actual == expected
+
+
+def _normalized_file_path(value: str) -> str:
+    try:
+        return str(Path(value).expanduser().resolve(strict=False)).casefold()
+    except OSError:
+        return str(Path(value).expanduser()).casefold()
 
 
 def _video_request(config: SceneConfig) -> dict[str, Any]:
