@@ -30,4 +30,4 @@ def test_camera_transform_uses_bottom_right_anchor() -> None:
     assert transform["boundsAlignment"] == 10
     assert transform["boundsType"] == "OBS_BOUNDS_SCALE_TO_WIDTH"
     assert transform["boundsWidth"] == 844.8
-    assert transform["boundsHeight"] == 0.0
+    assert transform["boundsHeight"] == 1.0

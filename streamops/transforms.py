@@ -64,7 +64,7 @@ def _camera_transform(
         "boundsType": "OBS_BOUNDS_SCALE_TO_WIDTH",
         "boundsAlignment": OBS_ALIGN_BOTTOM_RIGHT,
         "boundsWidth": target_width,
-        "boundsHeight": 0.0,
+        "boundsHeight": 1.0,
     }
 
 
