@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "streamops"
+version = "0.1.0"
+description = "Automation and control-plane tooling for the livestream OBS workflow."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "PyYAML>=6.0.3",
+  "websockets>=17.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.1.1",
+]
+
+[project.scripts]
+streamops = "streamops.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["streamops*"]
+
+[tool.setuptools.package-data]
+streamops = [
+  "assets/obs/*.html",
+  "config/scenes/*.yaml",
+  "docs/*.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["streamops/tests"]
+addopts = "-ra"

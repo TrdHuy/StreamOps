@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+streamops/artifacts/*
+!streamops/artifacts/.gitkeep
+artifacts/*
+streamops/config/local.yaml
+config/local.yaml
+secrets/
