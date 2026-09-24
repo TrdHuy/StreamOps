@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = [
-  "dxcam>=0.3.0; sys_platform == 'win32'",
+  "dxcam[winrt]>=0.3.0; sys_platform == 'win32'",
   "fastapi>=0.141.1",
   "pillow>=12.3.0",
   "uvicorn>=0.53.0",

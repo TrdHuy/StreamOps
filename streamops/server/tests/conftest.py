@@ -16,6 +16,7 @@ class FakeCaptureBackend:
         self.frames = deque(frames or [Image.new("RGB", (8, 6), "#2da486")])
         self.started = False
         self.closed = False
+        self.backend_name = "fake"
 
     def start(self) -> None:
         self.started = True

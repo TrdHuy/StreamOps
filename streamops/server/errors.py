@@ -17,6 +17,18 @@ class ScreenCaptureError(ServerError):
     """Raised when the Windows capture backend cannot produce an image."""
 
 
+class WrongDesktopSessionError(ScreenCaptureError):
+    """Raised when capture is attempted outside the active desktop session."""
+
+    def __init__(self, current_session_id: int, active_session_id: int) -> None:
+        self.current_session_id = current_session_id
+        self.active_session_id = active_session_id
+        super().__init__(
+            "Screen capture requires the active Windows console session "
+            f"(current session {current_session_id}, active session {active_session_id})."
+        )
+
+
 class CaptureStorageError(ServerError):
     """Raised when a captured image cannot be persisted."""
 

@@ -7,19 +7,28 @@ from streamops.server.services import ScreenCaptureService
 from .conftest import FakeCaptureBackend
 
 
-def test_health_reports_ready(server_config, capture_service: ScreenCaptureService) -> None:
+def test_health_reports_ready_only_after_a_real_frame(
+    server_config, capture_service: ScreenCaptureService
+) -> None:
     app = create_app(server_config, capture_service=capture_service, manage_runtime=False)
 
     with TestClient(app) as client:
+        initial = client.get("/api/v1/health")
+        capture = client.post("/api/v1/screen/capture")
         response = client.get("/api/v1/health")
 
+    assert initial.status_code == 200
+    assert initial.json()["capture_ready"] is False
+    assert capture.status_code == 200
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok",
-        "service": "streamops-node",
-        "version": "0.1.0",
-        "capture_ready": True,
-    }
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["service"] == "streamops-node"
+    assert payload["version"] == "0.1.0"
+    assert payload["capture_ready"] is True
+    assert payload["capture_backend"] == "fake"
+    assert isinstance(payload["session_id"], int)
+    assert isinstance(payload["active_console_session_id"], int)
 
 
 def test_web_ui_is_served(server_config, capture_service: ScreenCaptureService) -> None:

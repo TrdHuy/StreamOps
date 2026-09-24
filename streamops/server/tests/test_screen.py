@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from streamops.server.app import create_app
-from streamops.server.errors import ScreenCaptureError
+from streamops.server.errors import ScreenCaptureError, WrongDesktopSessionError
 from streamops.server.services import ScreenCaptureService
 
 from .conftest import FakeCaptureBackend
@@ -22,6 +22,25 @@ def test_latest_returns_404_before_first_capture(server_config) -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "no_capture"
+
+
+def test_wrong_desktop_session_has_specific_error_code(server_config) -> None:
+    class WrongSessionBackend(FakeCaptureBackend):
+        def start(self) -> None:
+            raise WrongDesktopSessionError(0, 1)
+
+        def capture(self, timeout: float):
+            raise WrongDesktopSessionError(0, 1)
+
+    service = ScreenCaptureService(WrongSessionBackend(), server_config.data_dir, 0.5)
+    app = create_app(server_config, capture_service=service, manage_runtime=False)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/screen/capture")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "wrong_desktop_session"
+    assert "current session 0, active session 1" in response.json()["error"]["message"]
 
 
 def test_capture_and_latest_image_contract(server_config) -> None:

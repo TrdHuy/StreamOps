@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from .api.health import router as health_router
 from .api.screen import router as screen_router
 from .config import ServerConfig
-from .errors import CaptureStorageError, NoCaptureError, ScreenCaptureError
+from .errors import CaptureStorageError, NoCaptureError, ScreenCaptureError, WrongDesktopSessionError
 from .platform.windows import WindowsScreenCaptureBackend
 from .services import ScreenCaptureService
 from .services.runtime import RuntimeLease
@@ -58,6 +58,10 @@ def create_app(
     @app.exception_handler(ScreenCaptureError)
     async def capture_error_handler(_request, exc: ScreenCaptureError) -> JSONResponse:
         return _error_response(503, "capture_failed", str(exc))
+
+    @app.exception_handler(WrongDesktopSessionError)
+    async def wrong_session_handler(_request, exc: WrongDesktopSessionError) -> JSONResponse:
+        return _error_response(503, "wrong_desktop_session", str(exc))
 
     @app.exception_handler(CaptureStorageError)
     async def storage_error_handler(_request, exc: CaptureStorageError) -> JSONResponse:

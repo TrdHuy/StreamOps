@@ -5,6 +5,7 @@ param([string]$DataDir)
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+$taskName = "StreamOps Node (repo-local)"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 
 function Test-RepoOwnedProcess([int]$ProcessId) {
@@ -37,8 +38,10 @@ if (-not $DataDir.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)
 }
 
 $runtimePath = Join-Path $DataDir "runtime.json"
+$task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+$taskState = if ($null -eq $task) { "NotRegistered" } else { [string]$task.State }
 if (-not (Test-Path -LiteralPath $runtimePath)) {
-    Write-Host "streamops-node is not running (no runtime state)."
+    Write-Host "streamops-node is not running (task $taskState, no runtime state)."
     exit 1
 }
 
@@ -59,6 +62,16 @@ catch {
     exit 1
 }
 
-Write-Host "streamops-node is running (PID $($runtime.pid), port $($runtime.port), output $($runtime.output_index))."
+if ($health.session_id -ne $health.active_console_session_id) {
+    Write-Host "streamops-node is in the wrong desktop session ($($health.session_id); active $($health.active_console_session_id))."
+    exit 1
+}
+if (-not $health.capture_ready) {
+    Write-Host "streamops-node is online in session $($health.session_id), but capture is unavailable."
+    exit 1
+}
+
+Write-Host "streamops-node is running (PID $($runtime.pid), session $($health.session_id), port $($runtime.port), output $($runtime.output_index), capture $($health.capture_backend))."
+Write-Host "Task: $taskName ($taskState)"
 Write-Host "Health: $healthUrl"
 exit 0

@@ -56,6 +56,11 @@ class ScreenCaptureService:
     def ready(self) -> bool:
         return self._ready
 
+    @property
+    def backend_name(self) -> str | None:
+        value = getattr(self.backend, "backend_name", None)
+        return value if isinstance(value, str) else None
+
     def start(self) -> None:
         try:
             self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -71,7 +76,9 @@ class ScreenCaptureService:
         except ScreenCaptureError:
             self._ready = False
         else:
-            self._ready = True
+            # Initialization alone is insufficient: some desktop APIs create a
+            # capture object but cannot deliver a frame in the current session.
+            self._ready = False
 
     def close(self) -> None:
         self.backend.close()

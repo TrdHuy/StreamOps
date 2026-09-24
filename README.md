@@ -640,13 +640,18 @@ Run the Windows node in the foreground with an explicit port:
 .\.venv\Scripts\streamops.exe runserver --port 8785
 ```
 
-Or manage a hidden background process from the repository:
+Or manage it from the repository through an on-demand Scheduled Task:
 
 ```powershell
 .\scripts\devices\a-windows\start-streamops-node.ps1 -Port 8785
 .\scripts\devices\a-windows\status-streamops-node.ps1
 .\scripts\devices\a-windows\stop-streamops-node.ps1
 ```
+
+The task has no automatic trigger and uses the logged-on user's interactive token so
+Windows screen capture runs on the active desktop. The start command verifies a real
+captured frame before it reports success. DXGI is preferred; WinRT is used automatically
+when the display driver initializes Desktop Duplication but does not deliver frames.
 
 Runtime state and `latest.png` are written only to `.streamops\node`. CLI flags override environment variables; supported variables are documented in `.env.example`.
 

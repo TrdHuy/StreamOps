@@ -1,4 +1,4 @@
-# StreamOps-managed repo-local start script.
+# StreamOps-managed interactive-session start script.
 [CmdletBinding()]
 param(
     [string]$BindHost = "0.0.0.0",
@@ -16,10 +16,13 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+$taskName = "StreamOps Node (repo-local)"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-$python = Join-Path $repoRoot ".venv\Scripts\python.exe"
-if (-not (Test-Path -LiteralPath $python)) {
-    throw "Repo-local virtual environment is missing. Run install-streamops-node.ps1 first."
+$launcher = Join-Path $PSScriptRoot "run-streamops-node.ps1"
+$pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
+
+function ConvertTo-TaskArgument([string]$Value) {
+    return '"' + $Value.Replace('"', '\"') + '"'
 }
 
 if ([string]::IsNullOrWhiteSpace($DataDir)) {
@@ -34,59 +37,97 @@ if (-not $DataDir.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)
     throw "DataDir must stay inside the repository: $repoRoot"
 }
 
-$logDir = Join-Path $DataDir "logs"
-New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$stdoutLog = Join-Path $logDir "node-$timestamp.stdout.log"
-$stderrLog = Join-Path $logDir "node-$timestamp.stderr.log"
-$arguments = @(
-    "-m", "streamops.cli", "runserver",
-    "--host", $BindHost,
-    "--port", $Port,
-    "--output-index", $OutputIndex,
-    "--data-dir", ('"{0}"' -f $DataDir.Replace('"', '\"')),
-    "--capture-timeout", $CaptureTimeout.ToString([Globalization.CultureInfo]::InvariantCulture),
-    "--log-level", $LogLevel
-)
+$interactiveUser = (Get-CimInstance Win32_ComputerSystem).UserName
+if ([string]::IsNullOrWhiteSpace($interactiveUser)) {
+    throw "No interactive Windows user is logged on; screen capture cannot start."
+}
 
-$process = Start-Process `
-    -FilePath $python `
-    -ArgumentList $arguments `
-    -WorkingDirectory $repoRoot `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $stdoutLog `
-    -RedirectStandardError $stderrLog `
-    -PassThru
-
-$probeHost = if ($BindHost -eq "0.0.0.0") { "127.0.0.1" } else { $BindHost }
-$healthUrl = "http://${probeHost}:$Port/api/v1/health"
-for ($attempt = 0; $attempt -lt 30; $attempt++) {
-    Start-Sleep -Milliseconds 500
-    $process.Refresh()
-    if ($process.HasExited) {
-        throw "streamops-node exited during startup. Inspect $stderrLog"
-    }
+$runtimePath = Join-Path $DataDir "runtime.json"
+if (Test-Path -LiteralPath $runtimePath) {
     try {
-        $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 1
-        if ($health.status -eq "ok") {
-            $runtimePath = Join-Path $DataDir "runtime.json"
-            $runtimePid = if (Test-Path -LiteralPath $runtimePath) {
-                (Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json).pid
-            }
-            else {
-                $process.Id
-            }
-            Write-Host "streamops-node is running (PID $runtimePid): $healthUrl"
-            Write-Host "Logs: $logDir"
+        $runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
+        $probeHost = if ($runtime.host -eq "0.0.0.0") { "127.0.0.1" } else { $runtime.host }
+        $health = Invoke-RestMethod -Uri "http://${probeHost}:$($runtime.port)/api/v1/health" -TimeoutSec 2
+        $matchesDesiredConfig =
+            $runtime.host -eq $BindHost -and
+            [int]$runtime.port -eq $Port -and
+            [int]$runtime.output_index -eq $OutputIndex -and
+            [double]$runtime.capture_timeout -eq $CaptureTimeout -and
+            $runtime.log_level -eq $LogLevel
+        if ($matchesDesiredConfig -and $health.status -eq "ok" -and $health.capture_ready -and
+            $health.session_id -eq $health.active_console_session_id) {
+            Write-Host "streamops-node is already running in interactive session $($health.session_id) with $($health.capture_backend) capture (PID $($runtime.pid))."
             exit 0
         }
     }
     catch {
-        # The server may still be initializing DXGI.
+        # The stale or unhealthy process is reconciled below.
+    }
+    & (Join-Path $PSScriptRoot "stop-streamops-node.ps1") -DataDir $DataDir
+}
+
+$existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if ($null -ne $existingTask -and $existingTask.State -eq "Running") {
+    Stop-ScheduledTask -TaskName $taskName
+}
+
+$actionArguments = @(
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+    "-ExecutionPolicy", "Bypass",
+    "-File", (ConvertTo-TaskArgument $launcher),
+    "-BindHost", (ConvertTo-TaskArgument $BindHost),
+    "-Port", $Port,
+    "-OutputIndex", $OutputIndex,
+    "-DataDir", (ConvertTo-TaskArgument $DataDir),
+    "-CaptureTimeout", $CaptureTimeout.ToString([Globalization.CultureInfo]::InvariantCulture),
+    "-LogLevel", $LogLevel
+) -join " "
+
+$action = New-ScheduledTaskAction -Execute $pwsh -Argument $actionArguments -WorkingDirectory $repoRoot
+$principal = New-ScheduledTaskPrincipal -UserId $interactiveUser -LogonType Interactive -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -MultipleInstances IgnoreNew `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries
+$definition = New-ScheduledTask `
+    -Action $action `
+    -Principal $principal `
+    -Settings $settings `
+    -Description "Repo-local StreamOps node; started on demand in the interactive desktop session."
+Register-ScheduledTask -TaskName $taskName -InputObject $definition -Force | Out-Null
+Start-ScheduledTask -TaskName $taskName
+
+$probeHost = if ($BindHost -eq "0.0.0.0") { "127.0.0.1" } else { $BindHost }
+$healthUrl = "http://${probeHost}:$Port/api/v1/health"
+for ($attempt = 0; $attempt -lt 60; $attempt++) {
+    Start-Sleep -Milliseconds 500
+    try {
+        $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 1
+        if ($health.status -eq "ok" -and $health.capture_ready -and
+            $health.session_id -eq $health.active_console_session_id) {
+            $runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
+            Write-Host "streamops-node is running (PID $($runtime.pid), session $($health.session_id), capture $($health.capture_backend)): $healthUrl"
+            Write-Host "Task: $taskName"
+            Write-Host "Logs: $(Join-Path $DataDir 'logs')"
+            exit 0
+        }
+        if (-not $health.capture_ready -and $attempt % 10 -eq 0) {
+            try {
+                Invoke-RestMethod -Method Post -Uri "http://${probeHost}:$Port/api/v1/screen/capture" `
+                    -TimeoutSec ([Math]::Ceiling($CaptureTimeout * 2 + 2)) | Out-Null
+            }
+            catch {
+                # Capture errors are reported after the readiness deadline.
+            }
+        }
+    }
+    catch {
+        # The task may still be starting.
     }
 }
 
-if (-not $process.HasExited) {
-    & (Join-Path $PSScriptRoot "stop-streamops-node.ps1") -DataDir $DataDir
-}
-throw "streamops-node did not become healthy within 15 seconds. Inspect $stderrLog"
+$taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+& (Join-Path $PSScriptRoot "stop-streamops-node.ps1") -DataDir $DataDir
+$result = if ($null -eq $taskInfo) { "unknown" } else { $taskInfo.LastTaskResult }
+throw "streamops-node did not become capture-ready in the interactive session. Task result: $result"

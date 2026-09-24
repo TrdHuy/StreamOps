@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ..config import ServerConfig
 from ..errors import RuntimeStateError
+from ..platform.windows import desktop_session_info
 
 
 class RuntimeLease:
@@ -22,9 +23,12 @@ class RuntimeLease:
         config.data_dir.mkdir(parents=True, exist_ok=True)
         path = config.data_dir / "runtime.json"
         pid = os.getpid()
+        session = desktop_session_info()
         payload = {
             "pid": pid,
             "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "session_id": session.current_session_id,
+            "active_console_session_id": session.active_console_session_id,
             **{key: str(value) if isinstance(value, Path) else value for key, value in asdict(config).items()},
         }
         encoded = (json.dumps(payload, indent=2) + "\n").encode("utf-8")

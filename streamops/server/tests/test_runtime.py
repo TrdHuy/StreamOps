@@ -17,6 +17,8 @@ def test_runtime_lease_records_effective_config(server_config: ServerConfig) -> 
         assert state["pid"] == lease.pid
         assert state["port"] == 8765
         assert state["data_dir"] == str(server_config.data_dir)
+        assert isinstance(state["session_id"], int)
+        assert isinstance(state["active_console_session_id"], int)
     finally:
         lease.release()
 
