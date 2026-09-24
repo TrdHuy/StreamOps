@@ -17,8 +17,10 @@ def test_dxgi_failure_falls_back_to_winrt(monkeypatch) -> None:
         def __init__(self, result) -> None:
             self.result = result
             self.released = False
+            self.new_frame_only_values = []
 
         def grab(self, *, new_frame_only: bool):
+            self.new_frame_only_values.append(new_frame_only)
             if isinstance(self.result, Exception):
                 raise self.result
             return self.result
@@ -48,8 +50,54 @@ def test_dxgi_failure_falls_back_to_winrt(monkeypatch) -> None:
     assert created_backends == ["dxgi", "winrt"]
     assert dxgi_camera.released is True
     assert winrt_camera.released is False
+    assert dxgi_camera.new_frame_only_values == [True]
+    assert winrt_camera.new_frame_only_values == [True]
     assert backend.backend_name == "winrt"
     assert not cameras
+
+
+def test_repeated_winrt_capture_recreates_camera(monkeypatch) -> None:
+    first_frame = object()
+    second_frame = object()
+
+    class Camera:
+        def __init__(self, result) -> None:
+            self.result = result
+            self.released = False
+
+        def grab(self, *, new_frame_only: bool):
+            assert new_frame_only is True
+            if isinstance(self.result, Exception):
+                raise self.result
+            return self.result
+
+        def release(self) -> None:
+            self.released = True
+
+    dxgi_camera = Camera(RuntimeError("no DXGI frame"))
+    first_winrt_camera = Camera(first_frame)
+    second_winrt_camera = Camera(second_frame)
+    cameras = [dxgi_camera, first_winrt_camera, second_winrt_camera]
+    created_backends = []
+
+    def create(**kwargs):
+        created_backends.append(kwargs["backend"])
+        return cameras.pop(0)
+
+    monkeypatch.setitem(sys.modules, "dxcam", SimpleNamespace(create=create))
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "streamops.server.platform.windows.screen.desktop_session_info",
+        lambda: DesktopSessionInfo(1, 1),
+    )
+    backend = WindowsScreenCaptureBackend(0)
+
+    assert backend.capture(0.1) is first_frame
+    assert backend.capture(0.1) is second_frame
+    assert created_backends == ["dxgi", "winrt", "winrt"]
+    assert dxgi_camera.released is True
+    assert first_winrt_camera.released is True
+    assert second_winrt_camera.released is False
 
 
 def test_capture_error_reports_both_backends(monkeypatch) -> None:

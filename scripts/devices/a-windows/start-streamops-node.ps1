@@ -25,6 +25,33 @@ function ConvertTo-TaskArgument([string]$Value) {
     return '"' + $Value.Replace('"', '\"') + '"'
 }
 
+function Get-ProbeHost([string]$HostName) {
+    if ($HostName -ne "0.0.0.0") {
+        return $HostName
+    }
+
+    $routes = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" `
+        -ErrorAction SilentlyContinue | Sort-Object RouteMetric
+    foreach ($route in $routes) {
+        $address = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $route.InterfaceIndex `
+            -AddressState Preferred -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
+            Select-Object -First 1
+        if ($null -ne $address) {
+            return $address.IPAddress
+        }
+    }
+
+    $address = Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred `
+        -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
+        Select-Object -First 1
+    if ($null -ne $address) {
+        return $address.IPAddress
+    }
+    return "127.0.0.1"
+}
+
 if ([string]::IsNullOrWhiteSpace($DataDir)) {
     $DataDir = Join-Path $repoRoot ".streamops\node"
 }
@@ -46,7 +73,7 @@ $runtimePath = Join-Path $DataDir "runtime.json"
 if (Test-Path -LiteralPath $runtimePath) {
     try {
         $runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
-        $probeHost = if ($runtime.host -eq "0.0.0.0") { "127.0.0.1" } else { $runtime.host }
+        $probeHost = Get-ProbeHost $runtime.host
         $health = Invoke-RestMethod -Uri "http://${probeHost}:$($runtime.port)/api/v1/health" -TimeoutSec 2
         $matchesDesiredConfig =
             $runtime.host -eq $BindHost -and
@@ -98,7 +125,7 @@ $definition = New-ScheduledTask `
 Register-ScheduledTask -TaskName $taskName -InputObject $definition -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 
-$probeHost = if ($BindHost -eq "0.0.0.0") { "127.0.0.1" } else { $BindHost }
+$probeHost = Get-ProbeHost $BindHost
 $healthUrl = "http://${probeHost}:$Port/api/v1/health"
 for ($attempt = 0; $attempt -lt 60; $attempt++) {
     Start-Sleep -Milliseconds 500

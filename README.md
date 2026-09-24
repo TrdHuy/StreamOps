@@ -652,6 +652,8 @@ The task has no automatic trigger and uses the logged-on user's interactive toke
 Windows screen capture runs on the active desktop. The start command verifies a real
 captured frame before it reports success. DXGI is preferred; WinRT is used automatically
 when the display driver initializes Desktop Duplication but does not deliver frames.
+When the node binds to `0.0.0.0`, lifecycle health checks use the active LAN address so
+an unrelated SSH listener on `127.0.0.1` cannot shadow the node.
 
 Runtime state and `latest.png` are written only to `.streamops\node`. CLI flags override environment variables; supported variables are documented in `.env.example`.
 

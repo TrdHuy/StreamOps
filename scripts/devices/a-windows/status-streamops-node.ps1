@@ -25,6 +25,33 @@ function Test-RepoOwnedProcess([int]$ProcessId) {
     return $null -ne $parent -and -not [string]::IsNullOrWhiteSpace($parent.Path) -and
         $parent.Path.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)
 }
+
+function Get-ProbeHost([string]$HostName) {
+    if ($HostName -ne "0.0.0.0") {
+        return $HostName
+    }
+
+    $routes = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" `
+        -ErrorAction SilentlyContinue | Sort-Object RouteMetric
+    foreach ($route in $routes) {
+        $address = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $route.InterfaceIndex `
+            -AddressState Preferred -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
+            Select-Object -First 1
+        if ($null -ne $address) {
+            return $address.IPAddress
+        }
+    }
+
+    $address = Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred `
+        -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
+        Select-Object -First 1
+    if ($null -ne $address) {
+        return $address.IPAddress
+    }
+    return "127.0.0.1"
+}
 if ([string]::IsNullOrWhiteSpace($DataDir)) {
     $DataDir = Join-Path $repoRoot ".streamops\node"
 }
@@ -52,7 +79,7 @@ if ($null -eq $process -or -not (Test-RepoOwnedProcess $runtime.pid)) {
     exit 1
 }
 
-$probeHost = if ($runtime.host -eq "0.0.0.0") { "127.0.0.1" } else { $runtime.host }
+$probeHost = Get-ProbeHost $runtime.host
 $healthUrl = "http://${probeHost}:$($runtime.port)/api/v1/health"
 try {
     $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2

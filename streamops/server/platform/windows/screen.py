@@ -62,6 +62,10 @@ class WindowsScreenCaptureBackend:
 
         failures: list[tuple[str, Exception]] = []
         for backend_name in backend_order:
+            if backend_name == "winrt" and self._camera is not None:
+                # WinRT one-shot capture can retain its first frame indefinitely.
+                # A new session makes every API request an actual point-in-time capture.
+                self.close()
             if self._camera is None or self._backend_name != backend_name:
                 self.close()
                 try:
@@ -100,7 +104,7 @@ class WindowsScreenCaptureBackend:
         self.start()
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            frame = self._camera.grab(new_frame_only=False)
+            frame = self._camera.grab(new_frame_only=True)
             if frame is not None:
                 return frame
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
